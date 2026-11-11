@@ -22,5 +22,3 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      # The npm package must run on plain Node, without type stripping.
-      - run: node dist/cli/baseline.js --help

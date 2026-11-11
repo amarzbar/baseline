@@ -41,12 +41,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   res.status(401).json({ error: 'Sign in first' });
 }
 
-// Five tries a minute per address. Behind Cloudflare the real address is in
-// CF-Connecting-IP.
+// Five tries a minute per address. With trust proxy on, req.ip is the client
+// address Nginx Proxy Manager forwards in X-Forwarded-For.
 const attempts = new Map<string, number[]>();
 
 export function login(req: Request, res: Response): void {
-  const ip = String(req.headers['cf-connecting-ip'] ?? req.ip);
+  const ip = String(req.ip);
   const now = Date.now();
   const recent = (attempts.get(ip) ?? []).filter(t => now - t < 60_000);
   if (recent.length >= 5) {

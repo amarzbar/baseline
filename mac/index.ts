@@ -15,10 +15,8 @@ import { serializeProfile } from './profile.ts';
 const config = loadConfig();
 cfg.setIdentity(config.cert, config.key);
 const SERVER = config.server;
-// The built UI: next to the bundle when installed from npm (dist/cli → dist/mac),
-// or in dist/mac when run from a checkout.
-const DIST = [path.join(import.meta.dirname, '../mac'), path.resolve(import.meta.dirname, '../dist/mac')]
-  .find(d => existsSync(path.join(d, 'index.html'))) ?? path.resolve('dist/mac');
+const DIST = path.resolve(import.meta.dirname, '../dist/mac');
+if (!existsSync(path.join(DIST, 'index.html'))) console.warn('No built UI in dist/mac yet: run `pnpm build` first.');
 const DAY = 86_400_000;
 
 const app = express();

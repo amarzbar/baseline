@@ -4,10 +4,10 @@ Lock a supervised iPhone down to the apps and sites you choose for 90 days or mo
 removal password that's time-locked: nobody can read it before the date, you included. A small
 PWA on your home screen shows how it's going and what you did with the time.
 
-- **Mac companion** (`mac/`, on npm as [`baseline-lock`](https://www.npmjs.com/package/baseline-lock)):
-  reads the phone's apps over USB with Apple Configurator's `cfgutil`, builds the profile, runs
+- **Mac companion** (`mac/`): reads the phone's apps over USB with Apple Configurator's `cfgutil`, builds the profile, runs
   the trial, and seals it.
-- **Server** (`server/`): runs on Mavis in Docker behind Cloudflare. It stores the lock (only the
+- **Server** (`server/`): runs on Mavis in Docker behind Nginx Proxy Manager, at
+  `baseline.amarzbar.xyz` on the tailnet. It stores the lock (only the
   [tlock](https://github.com/drand/tlock) ciphertext of the password), the journal and the
   progress numbers, and serves the PWA. Everything but the PWA shell needs `BASELINE_TOKEN`.
 - **Status PWA** (`pwa/`): Today, Journal and Lock tabs.
@@ -26,27 +26,30 @@ docker compose up -d
 (crontab -l; echo "*/5 * * * * $PWD/scripts/auto-update.sh >> $PWD/auto-update.log 2>&1") | crontab -
 ```
 
-The container listens on `127.0.0.1:3020`. Point the Cloudflare Tunnel's public hostname
-(e.g. `baseline.amarzbar.xyz`) at `http://localhost:3020`. If `cloudflared` runs in a container,
-set `BASELINE_BIND=0.0.0.0` in `.env` or put both on one Docker network.
+The container listens on port 3020. Then, like Pandora and Plane:
 
-If the GHCR package is private, run `docker login ghcr.io` on Mavis once, or make the package
-public in GitHub → Packages → baseline → Settings.
+1. **Nginx Proxy Manager** (mavis:81): add a proxy host `baseline.amarzbar.xyz` → `http` /
+   `mavis` (or Mavis's address) / `3020`, with Block Common Exploits and Websockets off, and an
+   SSL certificate (Force SSL, HTTP/2).
+2. **Cloudflare DNS**: an `A` record `baseline` → `100.67.68.86` (Mavis's tailnet address),
+   **DNS only** (grey cloud). The site then only answers on the tailnet.
 
-On the iPhone, open the site in Safari, paste the token once, and Add to Home Screen **before**
-sealing (Safari is hidden once the lock is on).
+On the iPhone (with Tailscale on), open the site in Safari, Add to Home Screen, open it from the
+home screen and paste the token once. Do this **before** sealing: Safari is hidden once the lock
+is on. Keep Tailscale in the kept apps.
 
 ## Run the Mac companion
 
-Needs macOS, Apple Configurator, a supervised iPhone, and Node 20.11 or later.
+Needs macOS, Apple Configurator, a supervised iPhone, and Node 24.
 
 ```bash
-npx baseline-lock --server https://baseline.amarzbar.xyz --token <BASELINE_TOKEN> --save
-# later runs: npx baseline-lock
+pnpm install && pnpm build
+pnpm mac --server https://baseline.amarzbar.xyz --token <BASELINE_TOKEN> --save
+# later runs: pnpm mac
 ```
 
 It opens http://127.0.0.1:8770. `--save` keeps the settings in `~/.config/baseline/config.json`
-(mode 600). `npx baseline-lock --help` lists every option.
+(mode 600). `pnpm mac --help` lists every option.
 
 If installing a profile stops to ask on the phone, export the supervision identity from Apple
 Configurator (Settings → Organizations → Export Supervision Identity), convert it to DER, and add
@@ -67,12 +70,6 @@ Configurator (Settings → Organizations → Export Supervision Identity), conve
 
 Steps and workouts: the PWA's Lock tab explains the iOS Shortcut that posts them daily (with
 `Authorization: Bearer <token>`).
-
-## Release to npm
-
-Bump `version` in `package.json`, commit, then `git tag v<version> && git push --tags`.
-`.github/workflows/release.yml` checks the tag matches, runs the checks, publishes with
-provenance and creates the GitHub release. It needs the `NPM_TOKEN` repository secret.
 
 ## Develop
 

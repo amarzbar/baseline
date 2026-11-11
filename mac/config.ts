@@ -19,9 +19,9 @@ const FILE = path.join(homedir(), '.config', 'baseline', 'config.json');
 
 const HELP = `baseline: lock a supervised iPhone to the apps and sites you choose.
 
-Usage: baseline [options]
+Usage: pnpm mac [options]
 
-  --server <url>   Baseline server, e.g. https://baseline.amarzbar.xyz   (BASELINE_SERVER)
+  --server <url>   Baseline server, e.g. https://baseline.amarzbar.xyz  (BASELINE_SERVER)
   --token <token>  The server's BASELINE_TOKEN                         (BASELINE_TOKEN)
   --cert <path>    Supervision identity certificate, DER   (BASELINE_SUPERVISION_CERT)
   --key <path>     Supervision identity private key, DER   (BASELINE_SUPERVISION_KEY)

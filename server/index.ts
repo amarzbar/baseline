@@ -20,7 +20,7 @@ const MAX_TRIAL_DAYS = 7;
 const MIN_LOCK_DAYS = 90;
 
 const app = express();
-// Cloudflare (or any proxy) terminates HTTPS; trust its X-Forwarded-* headers.
+// Nginx Proxy Manager terminates HTTPS; trust its X-Forwarded-* headers.
 app.set('trust proxy', true);
 app.use(express.json({ limit: '12mb' }));
 app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });

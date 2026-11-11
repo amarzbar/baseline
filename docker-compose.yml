@@ -7,11 +7,10 @@ services:
     build: .
     container_name: baseline
     restart: always
-    # Localhost only by default; Cloudflare Tunnel (cloudflared on Mavis)
-    # points baseline.amarzbar.xyz at http://localhost:3020. If cloudflared
-    # runs in a container instead, set BASELINE_BIND=0.0.0.0 or share a network.
+    # Nginx Proxy Manager terminates HTTPS for baseline.amarzbar.xyz and
+    # forwards to mavis:3020, the same way it fronts Salik on :3011.
     ports:
-      - "${BASELINE_BIND:-127.0.0.1}:3020:3020"
+      - "${BASELINE_BIND:-0.0.0.0}:3020:3020"
     environment:
       BASELINE_TOKEN: ${BASELINE_TOKEN:?set BASELINE_TOKEN in .env (openssl rand -base64 32)}
       TZ: ${TZ:-America/Toronto}

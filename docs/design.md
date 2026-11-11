@@ -34,7 +34,7 @@ even by its owner.
 ## How it works
 
 ```
-Mac (127.0.0.1:8770)                 Mavis (Docker, behind Cloudflare)       drand quicknet
+Mac (127.0.0.1:8770)                 Mavis (Docker, behind NPM, tailnet)     drand quicknet
   reads apps via cfgutil   ──trial──▶  stores lock settings
   builds + installs profile
   seal: random password ──tlock──────────────────────────────────────────▶  (public key)
@@ -52,7 +52,9 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, behind Cloudflare)       dra
   open it.
 - **Self-check:** before sealing, the Mac tries to decrypt the fresh ciphertext and refuses to
   continue if it opens.
-- **Access:** the server sits behind a Cloudflare Tunnel at `baseline.amarzbar.xyz`. One
+- **Access:** Nginx Proxy Manager on Mavis serves `baseline.amarzbar.xyz` over HTTPS, and its
+  Cloudflare DNS record (DNS only) points at Mavis's tailnet address, as Pandora and Plane do. So
+  the site only answers on the tailnet and the phone keeps Tailscale. On top of that, one
   shared secret, `BASELINE_TOKEN`, guards everything but the PWA shell: the Mac and the Health
   Shortcut send it as a Bearer header, and the PWA trades it once for a year-long HttpOnly
   cookie (journal photos load through `<img>`). Logins are limited to five tries a minute per
@@ -86,8 +88,6 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, behind Cloudflare)       dra
 - CI (`ci.yml`): typecheck, tests, build, and a smoke run of the bundled CLI on every push and PR.
 - Image (`docker.yml`): `ghcr.io/amarzbar/baseline:latest` on every push to `main`. Mavis runs
   `scripts/auto-update.sh` from cron, as Salik does.
-- npm (`release.yml`): a `v*` tag publishes the Mac companion as `baseline-lock`, a single
-  esbuild bundle with no runtime dependencies, plus the built Mac UI.
 
 ## Known gaps (accepted)
 
@@ -110,3 +110,4 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, behind Cloudflare)       dra
 - Banking and work apps work under the web allowlist (some use embedded web views).
 - Home-screen PWAs open with Safari hidden, through `com.apple.webapp`.
 - `baseline.amarzbar.xyz` is in the web allowlist, so the PWA loads once sealed.
+- Tailscale's existing VPN keeps working with `allowVPNCreation: false`.
