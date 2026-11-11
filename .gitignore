@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+*.log
+.env*
+.superpowers/
+
+# Runtime state on Mavis: the lock store, journal photos
+/data/

@@ -1,0 +1,14 @@
+services:
+  baseline:
+    build: .
+    container_name: baseline
+    restart: always
+    # Localhost only. Tailscale Serve puts it on the tailnet over HTTPS
+    # (`tailscale serve --bg 3020`), so it is never on the open internet and the
+    # phone's web allowlist can name it as https://mavis.<tailnet>.ts.net.
+    ports:
+      - "127.0.0.1:3020:3020"
+    environment:
+      TZ: ${TZ:-America/Toronto}
+    volumes:
+      - ./data:/app/data
