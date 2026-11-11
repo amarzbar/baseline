@@ -11,9 +11,10 @@ const CFGUTIL = process.env.CFGUTIL ?? '/Applications/Apple Configurator.app/Con
 
 // The supervision identity, exported from Configurator as DER files. Without
 // it cfgutil may stop and ask on the phone before installing a profile.
-const identity = process.env.BASELINE_SUPERVISION_CERT && process.env.BASELINE_SUPERVISION_KEY
-  ? ['-C', process.env.BASELINE_SUPERVISION_CERT, '-K', process.env.BASELINE_SUPERVISION_KEY]
-  : [];
+let identity: string[] = [];
+export function setIdentity(cert: string | null, key: string | null): void {
+  identity = cert && key ? ['-C', cert, '-K', key] : [];
+}
 
 export interface Device {
   ecid: string;

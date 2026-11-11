@@ -1,17 +1,24 @@
 // The Mac companion: a local web app (127.0.0.1 only) that reads the phone
 // over USB, builds the profile, installs it, and seals it with the time-lock.
+import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { suggestKeep } from '../shared/apps.ts';
 import { timeLock, timeUnlock } from '../shared/timelock.ts';
 import type { LockView, Summary } from '../shared/types.ts';
 import * as cfg from './cfgutil.ts';
+import { loadConfig } from './config.ts';
 import { serializeProfile } from './profile.ts';
 
-const PORT = Number(process.env.PORT ?? 8770);
-const SERVER = (process.env.BASELINE_SERVER ?? 'http://localhost:3020').replace(/\/$/, '');
-const DIST = path.resolve('dist/mac');
+const config = loadConfig();
+cfg.setIdentity(config.cert, config.key);
+const SERVER = config.server;
+// The built UI: next to the bundle when installed from npm (dist/cli → dist/mac),
+// or in dist/mac when run from a checkout.
+const DIST = [path.join(import.meta.dirname, '../mac'), path.resolve(import.meta.dirname, '../dist/mac')]
+  .find(d => existsSync(path.join(d, 'index.html'))) ?? path.resolve('dist/mac');
 const DAY = 86_400_000;
 
 const app = express();
@@ -32,11 +39,14 @@ async function server<T>(method: string, url: string, body?: unknown): Promise<T
   try {
     res = await fetch(`${SERVER}${url}`, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error(`Can't reach the Baseline server at ${SERVER}. Is Tailscale on?`);
+    throw new Error(`Can't reach the Baseline server at ${SERVER}`);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `Server error ${res.status}`);
@@ -63,7 +73,7 @@ function profileFor(lock: LockView, removalPassword?: string): string {
 
 app.get('/api/config', route(() => ({
   server: SERVER,
-  hasIdentity: Boolean(process.env.BASELINE_SUPERVISION_CERT && process.env.BASELINE_SUPERVISION_KEY),
+  hasIdentity: Boolean(config.cert && config.key),
 })));
 
 app.get('/api/device', route(async () => ({ device: await cfg.getDevice() })));
@@ -173,4 +183,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(400).json({ error: err instanceof Error ? err.message : 'Something went wrong' });
 });
 
-app.listen(PORT, '127.0.0.1', () => console.log(`Baseline for Mac on http://127.0.0.1:${PORT} (server: ${SERVER})`));
+app.listen(config.port, '127.0.0.1', () => {
+  const url = `http://127.0.0.1:${config.port}`;
+  console.log(`Baseline for Mac on ${url} (server: ${SERVER})`);
+  if (config.open) execFile('open', [url], () => {});
+});

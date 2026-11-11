@@ -1,14 +1,23 @@
 services:
   baseline:
+    # Published by .github/workflows/docker.yml on every push to main.
+    # `build: .` stays as a fallback: `docker compose up -d --build` still
+    # builds locally from the checkout.
+    image: ghcr.io/amarzbar/baseline:latest
     build: .
     container_name: baseline
     restart: always
-    # Localhost only. Tailscale Serve puts it on the tailnet over HTTPS
-    # (`tailscale serve --bg 3020`), so it is never on the open internet and the
-    # phone's web allowlist can name it as https://mavis.<tailnet>.ts.net.
+    # Localhost only by default; Cloudflare Tunnel (cloudflared on Mavis)
+    # points baseline.amarzbar.xyz at http://localhost:3020. If cloudflared
+    # runs in a container instead, set BASELINE_BIND=0.0.0.0 or share a network.
     ports:
-      - "127.0.0.1:3020:3020"
+      - "${BASELINE_BIND:-127.0.0.1}:3020:3020"
     environment:
+      BASELINE_TOKEN: ${BASELINE_TOKEN:?set BASELINE_TOKEN in .env (openssl rand -base64 32)}
       TZ: ${TZ:-America/Toronto}
     volumes:
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3020/api/ping"]
+      interval: 1m
+      timeout: 5s

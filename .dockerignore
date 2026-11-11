@@ -1,4 +1,7 @@
 node_modules
 dist
 data
+.env
+.github
+auto-update.log
 .git

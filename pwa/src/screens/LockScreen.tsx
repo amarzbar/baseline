@@ -108,7 +108,7 @@ export default function LockScreen({ summary }: { summary: Summary }) {
           <ol className="list-decimal space-y-1 pl-5 text-muted-fg">
             <li>Find Health Samples: Steps, start date is today, group by day. Then Calculate Statistics: Sum.</li>
             <li>Find Workouts: start date is today. Then Count.</li>
-            <li>Get Contents of URL: POST, JSON body with <code>steps</code> and <code>workouts</code>.</li>
+            <li>Get Contents of URL: POST, header <code>Authorization: Bearer &lt;your token&gt;</code>, JSON body with <code>steps</code> and <code>workouts</code>.</li>
           </ol>
           <p className="break-all rounded-xl bg-muted px-3 py-2 font-mono text-[12px]">{healthUrl}</p>
         </div>

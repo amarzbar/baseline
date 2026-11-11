@@ -34,7 +34,7 @@ even by its owner.
 ## How it works
 
 ```
-Mac (127.0.0.1:8770)                 Mavis (Docker, tailnet only)            drand quicknet
+Mac (127.0.0.1:8770)                 Mavis (Docker, behind Cloudflare)       drand quicknet
   reads apps via cfgutil   ──trial──▶  stores lock settings
   builds + installs profile
   seal: random password ──tlock──────────────────────────────────────────▶  (public key)
@@ -52,6 +52,12 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, tailnet only)            dra
   open it.
 - **Self-check:** before sealing, the Mac tries to decrypt the fresh ciphertext and refuses to
   continue if it opens.
+- **Access:** the server sits behind a Cloudflare Tunnel at `baseline.amarzbar.xyz`. One
+  shared secret, `BASELINE_TOKEN`, guards everything but the PWA shell: the Mac and the Health
+  Shortcut send it as a Bearer header, and the PWA trades it once for a year-long HttpOnly
+  cookie (journal photos load through `<img>`). Logins are limited to five tries a minute per
+  address. The token protects privacy and the trial; it can't open a sealed lock, which only
+  drand can.
 - **Phases** are derived from dates, never stored: `trial`, `trial-expired`, `sealing`,
   `locked`, `unlockable`, `removed`, `cancelled`.
 
@@ -75,6 +81,14 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, tailnet only)            dra
 - **Steps and workouts** come from a daily iOS Shortcut automation that POSTs to `/api/health`.
 - **Journal**: notes, tags and photos (shrunk to 1600px on the phone), stored on Mavis.
 
+## Delivery
+
+- CI (`ci.yml`): typecheck, tests, build, and a smoke run of the bundled CLI on every push and PR.
+- Image (`docker.yml`): `ghcr.io/amarzbar/baseline:latest` on every push to `main`. Mavis runs
+  `scripts/auto-update.sh` from cron, as Salik does.
+- npm (`release.yml`): a `v*` tag publishes the Mac companion as `baseline-lock`, a single
+  esbuild bundle with no runtime dependencies, plus the built Mac UI.
+
 ## Known gaps (accepted)
 
 - A full restore through recovery mode with a computer removes everything.
@@ -89,8 +103,10 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, tailnet only)            dra
 ## To verify during the first trial
 
 - `cfgutil get installedApps` JSON field names (the parser accepts several variants).
+- That the token sign-in cookie survives in the home-screen PWA (iOS keeps its storage separate
+  from Safari's, so sign in from inside the installed app).
 - Whether `cfgutil install-profile` needs the exported supervision identity (`-C`/`-K`) to
   install silently on this phone.
 - Banking and work apps work under the web allowlist (some use embedded web views).
 - Home-screen PWAs open with Safari hidden, through `com.apple.webapp`.
-- Tailscale's existing VPN keeps working with `allowVPNCreation: false`.
+- `baseline.amarzbar.xyz` is in the web allowlist, so the PWA loads once sealed.

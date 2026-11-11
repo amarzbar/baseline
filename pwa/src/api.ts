@@ -12,6 +12,7 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
+  login: (token: string) => call('POST', '/api/login', { token }),
   summary: () => call<Summary>('GET', '/api/summary'),
   journal: () => call<JournalEntry[]>('GET', '/api/journal'),
   addMoment: (m: { title: string; body: string; tags: string[]; photo: string | null }) =>

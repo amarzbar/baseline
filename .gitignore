@@ -3,7 +3,9 @@ dist/
 .vite/
 *.tsbuildinfo
 *.log
-.env*
+.env
+.env.*
+!.env.example
 .superpowers/
 
 # Runtime state on Mavis: the lock store, journal photos

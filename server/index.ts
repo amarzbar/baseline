@@ -1,6 +1,7 @@
 // Baseline's server on Mavis: stores locks (only the tlock ciphertext of the
 // removal password, never the password itself), the journal and the progress
-// numbers, and serves the status PWA. It's reachable only over the tailnet.
+// numbers, and serves the status PWA. Everything but the PWA shell needs
+// BASELINE_TOKEN (see auth.ts).
 import { randomUUID } from 'node:crypto';
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { normalizeDomain } from '../shared/apps.ts';
 import { timeUnlock } from '../shared/timelock.ts';
 import type { AllowedApp, Lock } from '../shared/types.ts';
+import { isAuthed, login, requireAuth } from './auth.ts';
 import { db, PHOTO_DIR, save } from './db.ts';
 import { currentLock, localDate, lockView, mondayOf, summarize } from './stats.ts';
 
@@ -18,7 +20,16 @@ const MAX_TRIAL_DAYS = 7;
 const MIN_LOCK_DAYS = 90;
 
 const app = express();
+// Cloudflare (or any proxy) terminates HTTPS; trust its X-Forwarded-* headers.
+app.set('trust proxy', true);
 app.use(express.json({ limit: '12mb' }));
+app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+
+app.get('/api/ping', (_req, res) => { res.json({ ok: true }); });
+app.get('/api/session', (req, res) => { res.json({ authed: isAuthed(req) }); });
+app.post('/api/login', login);
+app.use('/api', requireAuth);
+app.use('/photos', requireAuth);
 
 class HttpError extends Error {
   status: number;
