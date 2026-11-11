@@ -23,7 +23,8 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/20" onClick={onClose}>
-      <div className="w-full max-w-md rounded-t-[28px] bg-background px-6 pt-3 pb-safe shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-[28px] bg-background px-6 pt-3 pb-safe shadow-2xl"
+        onClick={e => e.stopPropagation()}>
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
         <h3 className="mb-4 text-[20px] font-normal">{title}</h3>
         <div className="pb-6">{children}</div>
