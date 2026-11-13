@@ -28,10 +28,18 @@ async function cfgutil(args: string[], opts: { cwd?: string; ecid?: string } = {
   try {
     const { stdout } = await run(CFGUTIL, ['--format', 'JSON', ...identity, ...ecid, ...args], {
       cwd: opts.cwd,
+      // cfgutil saves files relative to $PWD, not the process's working directory.
+      env: opts.cwd ? { ...process.env, PWD: opts.cwd } : process.env,
       maxBuffer: 64 * 1024 * 1024,
       timeout: 120_000,
     });
-    const out = JSON.parse(stdout || '{}');
+    // Some commands (get-app-icon) print plain text even in JSON mode.
+    let out: { Type?: string; Message?: string };
+    try {
+      out = JSON.parse(stdout || '{}');
+    } catch {
+      return { text: stdout };
+    }
     if (out.Type === 'Error') throw new Error(out.Message ?? 'cfgutil failed');
     return out;
   } catch (err) {
