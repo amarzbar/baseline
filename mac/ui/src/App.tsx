@@ -18,10 +18,10 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 }
 
 const fmt = (iso: string) => new Date(iso).toLocaleString('en-CA', { day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-const input = 'rounded-xl bg-muted px-3 py-2 text-[15px] outline-none placeholder:text-muted-fg focus:ring-2 focus:ring-primary/30';
-const button = 'rounded-xl px-4 py-2.5 text-[15px] font-medium active:scale-[0.99] disabled:opacity-40';
+const input = 'rounded-md border border-border bg-[var(--field)] px-2 py-[3px] text-[13px] outline-none placeholder:text-muted-fg focus:border-primary focus:ring-[3px] focus:ring-primary/30';
+const button = 'rounded-md px-3 py-[3px] text-[13px] shadow-[0_0.5px_1px_rgba(0,0,0,0.2)] active:brightness-90 disabled:opacity-40';
 const primary = `${button} bg-primary text-primary-fg`;
-const secondary = `${button} bg-secondary text-secondary-fg`;
+const secondary = `${button} bg-[var(--group)] text-foreground ring-[0.5px] ring-border`;
 
 // One question per screen, so setting up a lock never feels like a form.
 const STEPS = ['Phone', 'Apps', 'Blocking', 'Time', 'Review'] as const;
@@ -165,61 +165,80 @@ export default function App() {
     true,
   ][step];
 
+  const title = showWizard ? STEPS[step] : 'Your lock';
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-6 py-10">
-      <header className="mb-8 flex items-start justify-between">
-        <div>
-          <h1 className="text-[28px] font-light tracking-tight">Baseline</h1>
-          <p className="text-[13px] text-muted-fg">{server || '…'}</p>
-        </div>
-        <button className={secondary} onClick={() => act('refresh', async () => {})}>
-          {busy === 'refresh' ? 'Checking…' : 'Refresh'}
-        </button>
-      </header>
-
-      {error && <div className="glass mb-4 px-5 py-3 text-[14px] text-destructive">{error}</div>}
-      {notice && <div className="glass mb-4 px-5 py-3 text-[14px] text-primary">{notice}</div>}
-
-      {!showWizard && lock ? (
-        <LockStatus lock={lock} installed={installed} device={device} busy={busy}
-          onSeal={() => setSealing(true)}
-          onEdit={() => { loadFromLock(lock); setEditing(true); setStep(1); }}
-          onRemove={msg => act('remove', async () => { await call('POST', '/api/remove', { lockId: lock.id }); setNotice(msg); })} />
-      ) : (
-        <>
+    <div className="flex h-full">
+      <aside className="drag flex w-[210px] shrink-0 flex-col px-2.5 pt-[52px] pb-3">
+        <p className="px-2 pb-1 text-[11px] font-semibold text-muted-fg">{showWizard ? (inTrial ? 'Change the trial' : 'Set up') : 'Baseline'}</p>
+        {showWizard ? (
           <Stepper step={step} onGo={i => i < step && setStep(i)} />
+        ) : (
+          <div className="rounded-md bg-primary px-2 py-[5px] text-primary-fg">Your lock</div>
+        )}
+        <div className="mt-auto space-y-1 px-2 text-[11px] text-muted-fg">
+          <p className="flex items-center gap-1.5">
+            <span className={`h-[7px] w-[7px] rounded-full ${device?.supervised ? 'bg-[#34C759]' : device ? 'bg-[#FF9F0A]' : 'bg-muted-fg/50'}`} />
+            {device ? `${device.name}${device.supervised ? '' : ' · not supervised'}` : 'No iPhone connected'}
+          </p>
+          <p className="truncate">{server.replace('https://', '') || '…'}</p>
+        </div>
+      </aside>
 
-          <div className="flex-1">
-            {step === 0 && <PhoneStep device={device} />}
-            {step === 1 && (
-              <AppsStep phoneApps={phoneApps} selected={selected} toggle={toggle} storeApps={storeApps}
-                addStoreApp={a => { setStoreApps(s => [...s, a]); setSelected(s => new Set(s).add(a.bundleId)); }} />
-            )}
-            {step === 2 && (
-              <BlockingStep dns={dns} setDns={setDns} webFilter={webFilter} setWebFilter={setWebFilter}
-                blockSites={blockSites} setBlockSites={setBlockSites} allowSites={allowSites} setAllowSites={setAllowSites}
-                allowWebApps={allowWebApps} setAllowWebApps={setAllowWebApps} />
-            )}
-            {step === 3 && (
-              <TimeStep durationDays={durationDays} setDurationDays={setDurationDays} trialDays={trialDays}
-                setTrialDays={setTrialDays} trialLocked={inTrial} baseH={baseH} setBaseH={setBaseH} baseM={baseM} setBaseM={setBaseM} />
-            )}
-            {step === 4 && (
-              <ReviewStep apps={selected.size} allowWebApps={allowWebApps} dns={dnsUrl(dns)}
-                webFilter={webFilter} sites={webFilter === 'block' ? blockSites : allowSites}
-                durationDays={durationDays} trialDays={trialDays} baseline={baseH || baseM ? `${baseH || 0}h ${baseM || 0}m` : null}
-                updating={inTrial} onGo={setStep} />
+      <main className="content flex min-w-0 flex-1 flex-col">
+        <header className="drag flex h-[52px] shrink-0 items-center justify-between px-5">
+          <h1 className="text-[13px] font-semibold">{title}</h1>
+          <button className={secondary} onClick={() => act('refresh', async () => {})}>
+            {busy === 'refresh' ? 'Checking…' : 'Refresh'}
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-8 pt-2 pb-8">
+          <div className="mx-auto max-w-[620px]">
+            {error && <div className="glass mb-4 px-4 py-2.5 text-destructive">{error}</div>}
+            {notice && <div className="glass mb-4 px-4 py-2.5 text-primary">{notice}</div>}
+
+            {!showWizard && lock ? (
+              <LockStatus lock={lock} installed={installed} device={device} busy={busy}
+                onSeal={() => setSealing(true)}
+                onEdit={() => { loadFromLock(lock); setEditing(true); setStep(1); }}
+                onRemove={msg => act('remove', async () => { await call('POST', '/api/remove', { lockId: lock.id }); setNotice(msg); })} />
+            ) : (
+              <>
+                {step === 0 && <PhoneStep device={device} />}
+                {step === 1 && (
+                  <AppsStep phoneApps={phoneApps} selected={selected} toggle={toggle} storeApps={storeApps}
+                    addStoreApp={a => { setStoreApps(s => [...s, a]); setSelected(s => new Set(s).add(a.bundleId)); }} />
+                )}
+                {step === 2 && (
+                  <BlockingStep dns={dns} setDns={setDns} webFilter={webFilter} setWebFilter={setWebFilter}
+                    blockSites={blockSites} setBlockSites={setBlockSites} allowSites={allowSites} setAllowSites={setAllowSites}
+                    allowWebApps={allowWebApps} setAllowWebApps={setAllowWebApps} />
+                )}
+                {step === 3 && (
+                  <TimeStep durationDays={durationDays} setDurationDays={setDurationDays} trialDays={trialDays}
+                    setTrialDays={setTrialDays} trialLocked={inTrial} baseH={baseH} setBaseH={setBaseH} baseM={baseM} setBaseM={setBaseM} />
+                )}
+                {step === 4 && (
+                  <ReviewStep apps={selected.size} allowWebApps={allowWebApps} dns={dnsUrl(dns)}
+                    webFilter={webFilter} sites={webFilter === 'block' ? blockSites : allowSites}
+                    durationDays={durationDays} trialDays={trialDays} baseline={baseH || baseM ? `${baseH || 0}h ${baseM || 0}m` : null}
+                    updating={inTrial} onGo={setStep} />
+                )}
+              </>
             )}
           </div>
+        </div>
 
-          <footer className="mt-8 flex items-center justify-between">
+        {showWizard && (
+          <footer className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3">
             {step > 0 || editing ? (
               <button className={secondary} onClick={() => (step > 0 ? setStep(step - 1) : setEditing(false))}>Back</button>
             ) : <span />}
             {step < STEPS.length - 1 ? (
-              <button className={`${primary} px-6`} disabled={!canContinue} onClick={() => setStep(step + 1)}>Continue</button>
+              <button className={primary} disabled={!canContinue} onClick={() => setStep(step + 1)}>Continue</button>
             ) : (
-              <button className={`${primary} px-6`} disabled={!device?.supervised || !!busy || !selected.size}
+              <button className={primary} disabled={!device?.supervised || !!busy || !selected.size}
                 onClick={() => act('trial', async () => {
                   await call('POST', '/api/trial', settings());
                   setNotice(inTrial ? 'Trial profile updated on the phone.' : 'Trial started. Live with it for a few days, then seal.');
@@ -230,8 +249,8 @@ export default function App() {
               </button>
             )}
           </footer>
-        </>
-      )}
+        )}
+      </main>
 
       {sealing && lock && (
         <SealDialog lock={lock} busy={busy === 'seal'} onCancel={() => setSealing(false)}
@@ -247,28 +266,25 @@ export default function App() {
 
 function Stepper({ step, onGo }: { step: number; onGo: (i: number) => void }) {
   return (
-    <nav className="mb-8">
-      <div className="flex gap-1.5">
-        {STEPS.map((_, i) => <div key={i} className={`h-1 flex-1 rounded-full ${i <= step ? 'bg-primary' : 'bg-border'}`} />)}
-      </div>
-      <div className="mt-2 flex justify-between">
-        {STEPS.map((s, i) => (
-          <button key={s} onClick={() => onGo(i)} disabled={i >= step}
-            className={`text-[12px] ${i === step ? 'font-medium text-primary' : i < step ? 'text-foreground hover:underline' : 'text-muted-fg'}`}>
-            {s}
-          </button>
-        ))}
-      </div>
+    <nav className="space-y-0.5">
+      {STEPS.map((s, i) => (
+        <button key={s} onClick={() => onGo(i)} disabled={i > step}
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left ${i === step ? 'bg-primary text-primary-fg' : i < step ? 'hover:bg-muted' : 'text-muted-fg'}`}>
+          <span className={`flex h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-semibold ${i === step ? 'bg-white/25' : i < step ? 'bg-primary text-primary-fg' : 'bg-muted'}`}>
+            {i < step ? '✓' : i + 1}
+          </span>
+          {s}
+        </button>
+      ))}
     </nav>
   );
 }
 
-function StepTitle({ n, title, sub }: { n: number; title: string; sub: string }) {
+function StepTitle({ title, sub }: { n: number; title: string; sub: string }) {
   return (
-    <div className="mb-6">
-      <p className="label">Step {n} of {STEPS.length}</p>
-      <h2 className="mt-1 text-[26px] font-light leading-tight tracking-tight">{title}</h2>
-      <p className="mt-1 text-[15px] text-muted-fg">{sub}</p>
+    <div className="mb-5">
+      <h2 className="text-[20px] font-semibold tracking-tight">{title}</h2>
+      <p className="mt-1 leading-snug text-muted-fg">{sub}</p>
     </div>
   );
 }
@@ -279,17 +295,17 @@ function PhoneStep({ device }: { device: Device | null }) {
       <StepTitle n={1} title="Connect your iPhone" sub="Plug it into this Mac with a cable, unlock it, and tap Trust if it asks. Then press Refresh." />
       <div className="glass flex items-center justify-between px-5 py-5">
         <div>
-          <p className="text-[18px]">{device ? device.name : 'Waiting for a phone…'}</p>
+          <p className="text-[13px] font-medium">{device ? device.name : 'Waiting for a phone…'}</p>
           {device && <p className="text-[13px] text-muted-fg">iOS {device.iosVersion}</p>}
         </div>
         {device && (
-          <span className={`rounded-full px-3 py-1 text-[12px] font-medium ${device.supervised ? 'bg-secondary text-secondary-fg' : 'bg-red-100 text-destructive'}`}>
+          <span className={`rounded-md px-2 py-[2px] text-[11px] font-medium ${device.supervised ? 'bg-secondary text-secondary-fg' : 'bg-red-100 text-destructive'}`}>
             {device.supervised ? 'Supervised ✓' : 'Not supervised'}
           </span>
         )}
       </div>
       {device && !device.supervised && (
-        <p className="mt-3 text-[14px] text-destructive">The lock only works on a supervised phone. Supervise it with Apple Configurator first.</p>
+        <p className="mt-3 text-[13px] text-destructive">The lock only works on a supervised phone. Supervise it with Apple Configurator first.</p>
       )}
     </>
   );
@@ -353,7 +369,7 @@ function AppsStep({ phoneApps, selected, toggle, storeApps, addStoreApp }: {
               <button key={r.bundleId} className="flex items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-muted"
                 onClick={() => { addStoreApp({ bundleId: r.bundleId, name: r.name }); setResults([]); setQuery(''); }}>
                 <img src={r.icon} alt="" className="h-8 w-8 rounded-lg" />
-                <span className="min-w-0 flex-1"><span className="block truncate text-[14px]">{r.name}</span><span className="block truncate text-[12px] text-muted-fg">{r.seller}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-[13px]">{r.name}</span><span className="block truncate text-[11px] text-muted-fg">{r.seller}</span></span>
                 <span className="text-primary">+</span>
               </button>
             ))}
@@ -396,7 +412,7 @@ function BlockingStep(p: {
       <StepTitle n={3} title="How is the internet filtered?" sub="Your DNS filter (NextDNS) blocks sites for every app. It's locked on and can't be switched off from the phone." />
 
       <div className="glass px-5 py-5">
-        <label className="block text-[15px]">NextDNS profile ID, or any DNS-over-HTTPS address
+        <label className="block text-[13px]">NextDNS profile ID, or any DNS-over-HTTPS address
           <input className={`${input} mt-1 w-full`} placeholder="e.g. abc123" value={p.dns}
             onChange={e => { p.setDns(e.target.value); setTest(null); }} />
         </label>
@@ -406,7 +422,7 @@ function BlockingStep(p: {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button className={secondary} onClick={runTest} disabled={testing}>{testing ? 'Testing…' : 'Test it'}</button>
             {test?.map(t => (
-              <span key={t.name} className={`rounded-full px-2.5 py-1 text-[12px] ${t.result === 'blocked' ? 'bg-secondary text-secondary-fg' : t.result === 'error' ? 'bg-red-100 text-destructive' : 'bg-muted text-muted-fg'}`}>
+              <span key={t.name} className={`rounded-md px-2 py-[2px] text-[11px] ${t.result === 'blocked' ? 'bg-secondary text-secondary-fg' : t.result === 'error' ? 'bg-red-100 text-destructive' : 'bg-muted text-muted-fg'}`}>
                 {t.name} {t.result === 'blocked' ? 'blocked' : t.result === 'error' ? 'error' : 'loads'}
               </span>
             ))}
@@ -420,7 +436,7 @@ function BlockingStep(p: {
           {modes.map(m => (
             <label key={m.id} className={`flex cursor-pointer gap-3 rounded-xl px-3 py-2.5 ${p.webFilter === m.id ? 'bg-secondary' : 'hover:bg-muted'}`}>
               <input type="radio" name="webFilter" checked={p.webFilter === m.id} onChange={() => p.setWebFilter(m.id)} className="mt-1 accent-[var(--primary)]" />
-              <span><span className="block text-[15px]">{m.title}</span><span className="block text-[13px] text-muted-fg">{m.sub}</span></span>
+              <span><span className="block text-[13px]">{m.title}</span><span className="block text-[13px] text-muted-fg">{m.sub}</span></span>
             </label>
           ))}
         </div>
@@ -428,7 +444,7 @@ function BlockingStep(p: {
         {p.webFilter === 'allow' && (
           <>
             <SiteList sites={p.allowSites} setSites={p.setAllowSites} placeholder="Allow a site, e.g. rbcroyalbank.com" />
-            <label className="mt-4 flex items-center gap-2 text-[14px]">
+            <label className="mt-4 flex items-center gap-2 text-[13px]">
               <input type="checkbox" checked={p.allowWebApps} onChange={e => p.setAllowWebApps(e.target.checked)} className="accent-[var(--primary)]" />
               Home-screen web apps can open (they still only load the sites above)
             </label>
@@ -450,7 +466,7 @@ function SiteList({ sites, setSites, placeholder }: { sites: string[]; setSites:
     <div className="mt-4">
       <div className="flex flex-wrap gap-2">
         {sites.map(d => (
-          <span key={d} className="flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-[14px]">
+          <span key={d} className="flex items-center gap-2 rounded-md bg-muted px-2 py-[3px] text-[13px]">
             {d}
             <button onClick={() => setSites(sites.filter(x => x !== d))} aria-label={`Remove ${d}`}>×</button>
           </span>
@@ -473,21 +489,21 @@ function TimeStep(p: {
     <>
       <StepTitle n={4} title="How long?" sub="You'll try it first, then seal it. Once sealed, nothing changes until the end." />
       <div className="glass space-y-6 px-5 py-5">
-        <label className="block text-[15px]">Lock for
+        <label className="block text-[13px]">Lock for
           <div className="mt-1 flex items-center gap-3">
             <input className={`${input} w-28`} type="number" min={90} value={p.durationDays}
               onChange={e => p.setDurationDays(Math.max(90, Number(e.target.value) || 90))} />
             <span className="text-muted-fg">days (90 at least)</span>
           </div>
         </label>
-        <label className="block text-[15px]">Try it first for
+        <label className="block text-[13px]">Try it first for
           <div className="mt-1 flex items-center gap-3">
             <input className={`${input} w-28`} type="number" min={1} max={7} disabled={p.trialLocked} value={p.trialDays}
               onChange={e => p.setTrialDays(Math.min(7, Math.max(1, Number(e.target.value) || 1)))} />
             <span className="text-muted-fg">days (up to 7){p.trialLocked ? ' · already running' : ''}</span>
           </div>
         </label>
-        <div className="text-[15px]">Your screen time now, per day
+        <div className="text-[13px]">Your screen time now, per day
           <div className="mt-1 flex items-center gap-2">
             <input className={`${input} w-20`} placeholder="h" inputMode="numeric" value={p.baseH} onChange={e => p.setBaseH(e.target.value)} />
             <span className="text-muted-fg">h</span>
@@ -521,8 +537,8 @@ function ReviewStep(p: {
       <div className="glass divide-y divide-border px-5">
         {rows.map(([label, value, s]) => (
           <div key={label} className="flex items-baseline justify-between gap-6 py-3">
-            <span className="text-[14px] text-muted-fg">{label}</span>
-            <span className="flex-1 text-right text-[15px]">{value}</span>
+            <span className="text-[13px] text-muted-fg">{label}</span>
+            <span className="flex-1 text-right text-[13px]">{value}</span>
             <button className="text-[13px] text-primary hover:underline" onClick={() => p.onGo(s)}>Edit</button>
           </div>
         ))}
@@ -542,8 +558,8 @@ function LockStatus({ lock, installed, device, busy, onSeal, onEdit, onRemove }:
       {phase === 'trial' && (
         <>
           <p className="label">Trial</p>
-          <h2 className="mt-1 text-[26px] font-light">Trying it until {fmt(lock.trialEndsAt)}</h2>
-          <p className="mt-2 text-[15px] text-muted-fg">{onPhone} Use your phone as normal. When it feels right, seal it to start {lock.durationDays} days.</p>
+          <h2 className="mt-1 text-[20px] font-semibold">Trying it until {fmt(lock.trialEndsAt)}</h2>
+          <p className="mt-2 text-[13px] text-muted-fg">{onPhone} Use your phone as normal. When it feels right, seal it to start {lock.durationDays} days.</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button className={primary} disabled={!device || !!busy} onClick={onSeal}>Seal for {lock.durationDays} days…</button>
             <button className={secondary} disabled={!!busy} onClick={onEdit}>Change the trial</button>
@@ -554,24 +570,24 @@ function LockStatus({ lock, installed, device, busy, onSeal, onEdit, onRemove }:
       {phase === 'trial-expired' && (
         <>
           <p className="label">Trial ended</p>
-          <h2 className="mt-1 text-[26px] font-light">The trial ended {fmt(lock.trialEndsAt)}</h2>
-          <p className="mt-2 text-[15px] text-muted-fg">It can't be sealed now. Remove the trial profile, then start again.</p>
+          <h2 className="mt-1 text-[20px] font-semibold">The trial ended {fmt(lock.trialEndsAt)}</h2>
+          <p className="mt-2 text-[13px] text-muted-fg">It can't be sealed now. Remove the trial profile, then start again.</p>
           <button className={`${primary} mt-6`} disabled={!device || !!busy} onClick={() => onRemove('Trial profile removed.')}>Remove the trial profile</button>
         </>
       )}
-      {phase === 'sealing' && <h2 className="text-[26px] font-light">Sealing…</h2>}
+      {phase === 'sealing' && <h2 className="text-[20px] font-semibold">Sealing…</h2>}
       {phase === 'locked' && (
         <>
           <p className="label">Locked</p>
-          <h2 className="mt-1 text-[26px] font-light">Until {fmt(lock.unlockAt!)}</h2>
-          <p className="mt-2 text-[15px] text-muted-fg">Time-locked to drand round #{lock.round}. {onPhone} There's nothing to change until then.</p>
+          <h2 className="mt-1 text-[20px] font-semibold">Until {fmt(lock.unlockAt!)}</h2>
+          <p className="mt-2 text-[13px] text-muted-fg">Time-locked to drand round #{lock.round}. {onPhone} There's nothing to change until then.</p>
         </>
       )}
       {phase === 'unlockable' && (
         <>
           <p className="label">Open</p>
-          <h2 className="mt-1 text-[26px] font-light">The lock has opened</h2>
-          <p className="mt-2 text-[15px] text-muted-fg">Remove the profile here, or with the password in the Baseline app on your phone.</p>
+          <h2 className="mt-1 text-[20px] font-semibold">The lock has opened</h2>
+          <p className="mt-2 text-[13px] text-muted-fg">Remove the profile here, or with the password in the Baseline app on your phone.</p>
           <button className={`${primary} mt-6`} disabled={!device || !!busy} onClick={() => onRemove('Profile removed. Well done.')}>Remove the profile</button>
         </>
       )}
@@ -583,7 +599,7 @@ function Expander({ open, onToggle, title, children }: { open: boolean; onToggle
   return (
     <div className="glass mt-4 px-5 py-4">
       <button className="flex w-full items-center justify-between text-left" onClick={onToggle}>
-        <span className="text-[14px]">{title}</span>
+        <span className="text-[13px]">{title}</span>
         <span className="text-muted-fg">{open ? '−' : '+'}</span>
       </button>
       {open && <div className="mt-4">{children}</div>}
@@ -598,8 +614,8 @@ function AppRow({ app, icon, checked, onToggle, hint }: { app: AllowedApp; icon?
       <input type="checkbox" checked={checked} onChange={onToggle} className="h-4 w-4 accent-[var(--primary)]" />
       {icon && iconOk
         ? <img src={icon} alt="" className="h-7 w-7 rounded-lg" onError={() => setIconOk(false)} />
-        : <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary text-[12px] text-secondary-fg">{app.name[0]}</span>}
-      <span className="min-w-0 flex-1 truncate text-[14px]">{app.name}</span>
+        : <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary text-[11px] text-secondary-fg">{app.name[0]}</span>}
+      <span className="min-w-0 flex-1 truncate text-[13px]">{app.name}</span>
       {hint && <span className="text-[11px] text-muted-fg">{hint}</span>}
     </label>
   );
@@ -630,22 +646,22 @@ function SealDialog({ lock, busy, onCancel, onSeal }: { lock: LockView; busy: bo
   const waiting = accounts.find(a => !a.confirmed);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/30 px-6 py-10">
-      <div className="w-full max-w-lg rounded-[28px] bg-background px-7 py-7 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/25 px-6 py-10">
+      <div className="w-full max-w-lg rounded-xl bg-background px-6 py-5 shadow-2xl">
         {handedBack ? (
           <>
-            <h2 className="text-[24px] font-light">Not sealed</h2>
-            <p className="mt-2 text-[14px] text-muted-fg">These passwords may already be set on the sites. Save them somewhere before closing.</p>
+            <h2 className="text-[17px] font-semibold">Not sealed</h2>
+            <p className="mt-2 text-[13px] text-muted-fg">These passwords may already be set on the sites. Save them somewhere before closing.</p>
             <ul className="mt-4 space-y-2">
-              {handedBack.map(a => <li key={a.label} className="rounded-xl bg-muted px-3 py-2 text-[14px]"><b>{a.label}</b>: <span className="select-all font-mono">{a.password}</span></li>)}
+              {handedBack.map(a => <li key={a.label} className="rounded-xl bg-muted px-3 py-2 text-[13px]"><b>{a.label}</b>: <span className="select-all font-mono">{a.password}</span></li>)}
             </ul>
             <div className="mt-5 flex justify-end"><button className={secondary} onClick={onCancel}>Close</button></div>
           </>
         ) : part === 'accounts' ? (
           <>
             <p className="label">Seal · 1 of 2</p>
-            <h2 className="mt-1 text-[24px] font-light">Lock the accounts that could undo this</h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-muted-fg">
+            <h2 className="mt-1 text-[17px] font-semibold">Lock the accounts that could undo this</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted-fg">
               Anyone who can sign in to your NextDNS account can switch the filter off. For each account, Baseline makes a new password and copies it.
               Paste it into the site's change-password page and save. You never see it, and it unlocks with the profile.
               Lock the account's email too, or "forgot password" gets you back in.
@@ -653,7 +669,7 @@ function SealDialog({ lock, busy, onCancel, onSeal }: { lock: LockView; busy: bo
 
             <ul className="mt-4 space-y-2">
               {accounts.map((a, i) => (
-                <li key={i} className="flex items-center justify-between rounded-xl bg-muted px-3 py-2 text-[14px]">
+                <li key={i} className="flex items-center justify-between rounded-xl bg-muted px-3 py-2 text-[13px]">
                   <span>{a.label}</span>
                   {a.confirmed ? <span className="text-primary">Locked ✓</span> : (
                     <span className="flex gap-2">
@@ -690,13 +706,13 @@ function SealDialog({ lock, busy, onCancel, onSeal }: { lock: LockView; busy: bo
         ) : (
           <>
             <p className="label">Seal · 2 of 2</p>
-            <h2 className="mt-1 text-[24px] font-light">Seal for {lock.durationDays} days?</h2>
-            <ul className="mt-4 list-disc space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted-fg">
+            <h2 className="mt-1 text-[17px] font-semibold">Seal for {lock.durationDays} days?</h2>
+            <ul className="mt-4 list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-muted-fg">
               <li>Opens {fmt(unlock.toISOString())}. No exceptions and no early unlock.</li>
               <li>{lock.apps.length} apps, exactly as in the trial.</li>
               <li>The removal password{accounts.length ? ` and ${accounts.length} account password${accounts.length > 1 ? 's' : ''}` : ''} are time-locked with drand. You will never see them before then.</li>
             </ul>
-            <label className="mt-5 block text-[14px]">Type <b>SEAL</b> to confirm
+            <label className="mt-5 block text-[13px]">Type <b>SEAL</b> to confirm
               <input className={`${input} mt-1 w-full`} value={typed} onChange={e => setTyped(e.target.value)} autoFocus />
             </label>
             <div className="mt-5 flex justify-end gap-3">

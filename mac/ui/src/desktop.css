@@ -1,0 +1,97 @@
+/* Baseline for Mac: macOS look rather than the PWA's. System font at 13px,
+   a translucent sidebar (Electron vibrancy shows through), an opaque content
+   pane, inset grouped boxes like System Settings, and small push buttons.
+   The green stays as the accent so it's still recognisably Baseline. */
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: var(--sheet);
+  --color-foreground: var(--label);
+  --color-primary: var(--accent);
+  --color-primary-fg: #FFFFFF;
+  --color-secondary: var(--tint);
+  --color-secondary-fg: var(--accent);
+  --color-muted: var(--fill);
+  --color-muted-fg: var(--secondary-label);
+  --color-border: var(--separator);
+  --color-destructive: var(--red);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+}
+
+:root {
+  --accent: #1C7A52;
+  --tint: rgba(28, 122, 82, 0.12);
+  --label: rgba(0, 0, 0, 0.85);
+  --secondary-label: rgba(0, 0, 0, 0.5);
+  --separator: rgba(0, 0, 0, 0.1);
+  --fill: rgba(0, 0, 0, 0.05);
+  --window: #F5F5F7;
+  --group: #FFFFFF;
+  --sheet: #F5F5F7;
+  --field: #FFFFFF;
+  --sidebar-fallback: #E8E8EA;
+  --red: #D70015;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #30B07A;
+    --tint: rgba(48, 176, 122, 0.18);
+    --label: rgba(255, 255, 255, 0.88);
+    --secondary-label: rgba(255, 255, 255, 0.55);
+    --separator: rgba(255, 255, 255, 0.1);
+    --fill: rgba(255, 255, 255, 0.07);
+    --window: #1E1E1E;
+    --group: #2A2A2A;
+    --sheet: #262626;
+    --field: #1E1E1E;
+    --sidebar-fallback: #2B2B2D;
+    --red: #FF453A;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--label);
+  /* In Electron the window's vibrancy shows through behind the sidebar. */
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+html:not(.electron) body { background: var(--sidebar-fallback); }
+
+input, textarea, .selectable { user-select: text; cursor: auto; }
+button { cursor: default; }
+
+/* The window drags from its top strip and the sidebar's empty space. */
+.drag { -webkit-app-region: drag; }
+.drag button, .drag input, .drag a, .no-drag { -webkit-app-region: no-drag; }
+
+.content { background: var(--window); }
+
+/* An inset group, like a section in System Settings. */
+.glass {
+  background: var(--group);
+  border-radius: 10px;
+  box-shadow: 0 0 0 0.5px var(--separator), 0 1px 1px rgba(0, 0, 0, 0.03);
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label);
+}
+
+input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: var(--separator); border-radius: 4px; }
