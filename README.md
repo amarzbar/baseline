@@ -52,7 +52,9 @@ It opens http://127.0.0.1:8770. `--save` keeps the settings in `~/.config/baseli
 (mode 600). `pnpm mac --help` lists every option.
 
 If installing a profile stops to ask on the phone, export the supervision identity from Apple
-Configurator (Settings → Organizations → Export Supervision Identity), convert it to DER, and add
+Configurator (Settings → Organizations → Export Supervision Identity), convert it to a DER
+certificate and a DER **PKCS#1** key (`openssl pkey -outform DER -traditional`; cfgutil rejects
+PKCS#8 with "couldn't create supervision identity"), and add
 `--cert /path/cert.der --key /path/key.der --save`.
 
 ## Using it
