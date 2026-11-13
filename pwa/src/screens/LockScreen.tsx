@@ -84,7 +84,7 @@ export default function LockScreen({ summary }: { summary: Summary }) {
         <div className="glass px-5 py-4">
           <p className="label">Removal password</p>
           <p className="mt-2 text-[14px] leading-relaxed text-muted-fg">
-            Sealed with tlock to drand round #{lock.round?.toLocaleString()}{lock.accounts.length ? `, along with the passwords for ${lock.accounts.join(', ')}` : ''}. Nobody, not this server and not you, can read them before {fmtDate(lock.unlockAt!)}.
+            Sealed with tlock to drand round #{lock.round?.toLocaleString()}{lock.accounts.length ? `, along with the password${lock.accounts.length > 1 ? 's' : ''} for ${lock.accounts.join(' and ')}` : ''}. Nobody, not this server and not you, can read them before {fmtDate(lock.unlockAt!)}.
           </p>
         </div>
       )}

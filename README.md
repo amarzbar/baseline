@@ -1,90 +1,138 @@
-# Baseline
+<p align="center">
+  <img src="pwa/public/icon-180.png" width="88" alt="Baseline icon" />
+</p>
 
-Lock a supervised iPhone down to the apps and sites you choose for 90 days or more, with a
-removal password that's time-locked: nobody can read it before the date, you included. A small
-PWA on your home screen shows how it's going and what you did with the time.
+<h1 align="center">Baseline</h1>
 
-- **Mac companion** (`mac/`): reads the phone's apps over USB with Apple Configurator's `cfgutil`, builds the profile, runs
-  the trial, and seals it.
-- **Server** (`server/`): runs on Mavis in Docker behind Nginx Proxy Manager, at
-  `baseline.amarzbar.xyz` on the tailnet. It stores the lock (only the
-  [tlock](https://github.com/drand/tlock) ciphertext of the password), the journal and the
-  progress numbers, and serves the PWA. Everything but the PWA shell needs `BASELINE_TOKEN`.
-- **Status PWA** (`pwa/`): Today, Journal and Lock tabs.
+<p align="center">
+  A 90-day lock for your iPhone that even you can't open early.<br />
+  Keep the apps you need, block the rest, and see what you did with the time.
+</p>
 
-See [docs/design.md](docs/design.md) for how it works and what it can't stop.
+<p align="center">
+  <img src="docs/screenshots/pwa-today.png" width="250" alt="Today: day 40 of 90, 52 hours given back" />
+  &nbsp;
+  <img src="docs/screenshots/pwa-journal.png" width="250" alt="Journal: moments with photos and tags" />
+  &nbsp;
+  <img src="docs/screenshots/pwa-lock.png" width="250" alt="Lock: dates, drand round and filtering" />
+</p>
 
-## Deploy the server (Mavis)
+## What it does
 
-Every push to `main` builds `ghcr.io/amarzbar/baseline:latest` (`.github/workflows/docker.yml`).
+Baseline puts a configuration profile on a **supervised** iPhone that:
+
+- **Keeps only the apps you choose.** Banking, Wallet, Health, work apps and messaging keep
+  working and updating. Everything else, including new installs, won't open.
+- **Filters the internet with DNS.** Usually NextDNS, locked on so it can't be switched off from
+  the phone. An optional web filter can block (or only allow) specific sites as well.
+- **Can't be removed until the date.** The profile's removal password is made at random and
+  [time-locked with tlock](https://github.com/drand/tlock) to a future round of drand's public
+  randomness beacon. Nobody can decrypt it before then: not the server, and not you.
+
+You live with it as a removable **trial** for up to 7 days first. When everything you need
+works, you **seal** it for 90 days or more. Sealing can also lock the passwords of accounts that
+could undo the lock (your NextDNS account and its email): Baseline makes new ones, you paste them
+into the sites, and they unlock on the same day as the profile.
+
+## The three parts
+
+| | What it is | What it does |
+|---|---|---|
+| **Baseline for Mac** (`mac/`, `electron/`) | A Mac app (Electron) that talks to the phone over USB through Apple Configurator's `cfgutil` | Reads your phone's apps by name and icon, walks you through setup step by step, installs the trial, seals it, and removes it when the lock opens |
+| **Status app** (`pwa/`) | A home-screen web app on the phone | **Today:** day count, hours given back, steps, milestones. **Journal:** moments with notes, tags and photos. **Lock:** dates, what's kept, filtering, and the passwords on unlock day |
+| **Server** (`server/`) | A small Node service in Docker, on your own machine | Stores the lock (only the encrypted passwords), the journal and progress numbers, and serves the status app. Everything except the page itself needs a token |
+
+### Baseline for Mac
+
+<p align="center">
+  <img src="docs/screenshots/mac-apps.png" width="760" alt="Which apps stay? A list of the phone's apps with suggested ones ticked" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mac-blocking.png" width="375" alt="Blocking: NextDNS test showing social sites blocked" />
+  &nbsp;
+  <img src="docs/screenshots/mac-review.png" width="375" alt="Review before starting the trial" />
+</p>
+
+Five steps (Phone, Apps, Blocking, Time, Review), always in the sidebar. You never type a bundle
+ID: apps come off the phone with their names, and apps you haven't installed yet can be added by
+searching the App Store. The Blocking step tests your DNS filter before you rely on it. Slow
+phone-side actions show progress and send a notification when they finish.
+
+### Progress, without another app to check
+
+The status app has no feed and doesn't nag you to come back. "Hours given back" compares
+your screen time before the lock with a weekly 10-second check-in (iOS doesn't let web apps read
+Screen Time). Steps and workouts arrive from a daily iOS Shortcut.
+
+## What it can't stop
+
+Baseline makes getting out slow and deliberate, not impossible:
+
+- A full restore of the phone through recovery mode with a computer.
+- The supervision identity on your Mac: Apple Configurator can remove the profile with it.
+- Changing your DNS provider's settings from another device, unless that account was locked
+  when sealing.
+
+See [docs/design.md](docs/design.md) for the full design and the reasoning behind it.
+
+## Set it up
+
+You need a Mac with Apple Configurator, an iPhone that's already **supervised**, and somewhere to
+run the server.
+
+### 1. The server
+
+Every push to `main` builds `ghcr.io/amarzbar/baseline:latest`.
 
 ```bash
 git clone https://github.com/amarzbar/baseline.git && cd baseline
 cp .env.example .env && sed -i "s|^BASELINE_TOKEN=.*|BASELINE_TOKEN=$(openssl rand -base64 32)|" .env
 docker compose up -d
-# keep it current: pull the new image whenever main changes
+# pull new images automatically
 (crontab -l; echo "*/5 * * * * $PWD/scripts/auto-update.sh >> $PWD/auto-update.log 2>&1") | crontab -
 ```
 
-The container listens on port 3020. Then, like Pandora and Plane:
+It listens on port 3020. Put it behind your reverse proxy with HTTPS. Mine is Nginx Proxy
+Manager on a tailnet-only hostname: a DNS-only record pointing at the machine's Tailscale
+address, so the site only answers on the tailnet.
 
-1. **Nginx Proxy Manager** (mavis:81): add a proxy host `baseline.amarzbar.xyz` → `http` /
-   `mavis` (or Mavis's address) / `3020`, with Block Common Exploits and Websockets off, and an
-   SSL certificate (Force SSL, HTTP/2).
-2. **Cloudflare DNS**: an `A` record `baseline` → `100.67.68.86` (Mavis's tailnet address),
-   **DNS only** (grey cloud). The site then only answers on the tailnet.
+### 2. The Mac app
 
-On the iPhone (with Tailscale on), open the site in Safari, Add to Home Screen, open it from the
-home screen and paste the token once. Do this **before** sealing: Safari is hidden once the lock
-is on. Keep Tailscale in the kept apps.
-
-## Run the Mac companion
-
-**As an app:** `pnpm app:dist` builds `release/mac-arm64/Baseline.app` (unsigned, for your own Mac);
-drag it to Applications. It reads the same `~/.config/baseline/config.json` as below, so run
-`pnpm mac --server … --token … --save` once first. `pnpm app` runs it straight from the checkout.
-
-**In a browser tab:**
-
-Needs macOS, Apple Configurator, a supervised iPhone, and Node 24.
+Needs Node 24 and pnpm.
 
 ```bash
-pnpm install && pnpm build
-pnpm mac --server https://baseline.amarzbar.xyz --token <BASELINE_TOKEN> --save
-# later runs: pnpm mac
+pnpm install
+pnpm mac --server https://baseline.example.com --token <BASELINE_TOKEN> --save   # once, saves settings
+pnpm app:dist          # builds release/mac-arm64/Baseline.app; drag it to Applications
 ```
 
-It opens http://127.0.0.1:8770. `--save` keeps the settings in `~/.config/baseline/config.json`
-(mode 600). `pnpm mac --help` lists every option.
+Settings live in `~/.config/baseline/config.json` (readable only by you).
 
-If installing a profile stops to ask on the phone, export the supervision identity from Apple
-Configurator (Settings → Organizations → Export Supervision Identity), convert it to a DER
-certificate and a DER **PKCS#1** key (`openssl pkey -outform DER -traditional`; cfgutil rejects
-PKCS#8 with "couldn't create supervision identity"), and add
-`--cert /path/cert.der --key /path/key.der --save`.
+**Supervision identity.** Without it, the phone asks for confirmation and `cfgutil` can't install
+profiles. Export it from Apple Configurator (Settings → Organizations → Export Supervision
+Identity), then convert it to a DER certificate and a DER **PKCS#1** key. cfgutil rejects PKCS#8
+with "couldn't create supervision identity":
 
-## Using it
+```bash
+openssl pkcs12 -in identity.p12 -nokeys -clcerts | openssl x509 -outform DER -out supervision-cert.der
+openssl pkcs12 -in identity.p12 -nocerts -nodes | openssl pkey -outform DER -traditional -out supervision-key.der
+pnpm mac --cert supervision-cert.der --key supervision-key.der --save
+```
 
-1. Plug in the phone. Tick the apps that stay (suggestions are pre-ticked), add anything not
-   installed yet by searching the App Store, list the sites that should load (each subdomain your
-   PWAs use; the server's own hostname is added for you), optionally add a NextDNS profile ID,
-   and enter your current daily screen time.
-2. **Start the trial.** The real profile goes on, removable. Live with it for up to 7 days and
-   fix anything that breaks with "Update the trial profile".
-3. **Seal.** Type SEAL. The password is generated, time-locked to the drand round at the unlock
-   date, stored on the server, and installed in the profile. It's never shown or saved.
-4. On the unlock date, the PWA's Lock tab opens the time-lock and shows the password. Or plug in
-   and remove the profile from the Mac.
+### 3. The phone
 
-Steps and workouts: the PWA's Lock tab explains the iOS Shortcut that posts them daily (with
-`Authorization: Bearer <token>`).
+Open the server's address in Safari, **Add to Home Screen**, open it from there and paste the
+token once. Do this before sealing: Safari can be hidden once the lock is on.
 
 ## Develop
 
 ```bash
-BASELINE_TOKEN=dev-token-0123456789 pnpm server   # API + built PWA on :3020 (DATA_DIR=./data)
-pnpm dev:pwa                                      # PWA with hot reload on :5180, proxied to :3020
-pnpm mac --token dev-token-0123456789 --no-open   # Mac companion on :8770 (from source)
+BASELINE_TOKEN=dev-token-0123456789 pnpm server   # API + built status app on :3020
+pnpm dev:pwa                                      # status app with hot reload on :5180
+pnpm mac --token dev-token-0123456789 --no-open   # Mac companion in a browser tab on :8770
 pnpm dev:mac                                      # Mac UI with hot reload on :5181
+pnpm app                                          # the Electron app, from source
 pnpm test && pnpm typecheck && pnpm build
+node scripts/screenshots.ts                       # regenerate the README screenshots (sample data only)
 ```
