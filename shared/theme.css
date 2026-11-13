@@ -46,6 +46,9 @@ html {
   height: auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /* No double-tap zoom; panning (scrolling) still works. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
