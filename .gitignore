@@ -10,3 +10,6 @@ dist/
 
 # Runtime state on Mavis: the lock store, journal photos
 /data/
+
+# Stray app icons from cfgutil, if it ever writes to the working directory again
+/*.png
