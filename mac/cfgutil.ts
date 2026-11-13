@@ -43,9 +43,18 @@ async function cfgutil(args: string[], opts: { cwd?: string; ecid?: string } = {
     if (out.Type === 'Error') throw new Error(out.Message ?? 'cfgutil failed');
     return out;
   } catch (err) {
-    const e = err as { code?: string; stderr?: string; message: string };
+    const e = err as { code?: string | number; stdout?: string; stderr?: string; message: string };
     if (e.code === 'ENOENT') throw new Error('Apple Configurator is not installed (cfgutil not found)');
-    throw new Error((e.stderr || e.message).trim());
+    // On failure cfgutil puts the reason in its JSON output, not on stderr.
+    let reason = '';
+    try {
+      const out = JSON.parse(e.stdout ?? '');
+      reason = [out.Message, out.FailureReason, out.Code && `(code ${out.Code})`].filter(Boolean).join(' ');
+    } catch {
+      reason = (e.stdout ?? '').trim();
+    }
+    console.error(`cfgutil ${args[0]} failed:`, e.stdout, e.stderr);
+    throw new Error(`cfgutil ${args[0]}: ${reason || (e.stderr || e.message).trim()}`);
   }
 }
 
