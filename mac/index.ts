@@ -108,8 +108,10 @@ app.get('/api/appstore', route(async req => {
 }));
 
 // The current lock, and whether its profile is on the phone right now.
-app.get('/api/lock', route(async () => {
+// ?phone=0 skips the phone (each cfgutil call takes seconds), for a quick first paint.
+app.get('/api/lock', route(async req => {
   const { lock } = await server<Summary>('GET', '/api/summary');
+  if (req.query.phone === '0') return { lock, installed: null, device: null };
   let installed: boolean | null = null;
   const device = await cfg.getDevice().catch(() => null);
   if (lock && device) {

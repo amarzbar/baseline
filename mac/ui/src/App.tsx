@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BUILT_IN_APPS, DEFAULT_BLOCKED_SITES, normalizeDomain } from '../../../shared/apps.ts';
 import type { AllowedApp, LockView, WebFilter } from '../../../shared/types.ts';
 
@@ -22,6 +22,40 @@ const input = 'rounded-md border border-border bg-[var(--field)] px-2 py-[3px] t
 const button = 'rounded-md px-3 py-[3px] text-[13px] shadow-[0_0.5px_1px_rgba(0,0,0,0.2)] active:brightness-90 disabled:opacity-40';
 const primary = `${button} bg-primary text-primary-fg`;
 const secondary = `${button} bg-[var(--group)] text-foreground ring-[0.5px] ring-border`;
+
+// What the app is doing during the slow, phone-side actions, and the
+// notification when each finishes (handy when the window is behind others).
+const WORKING: Record<string, string> = {
+  trial: 'Putting the profile on your phone. Keep it unlocked and plugged in; this can take a minute.',
+  seal: 'Sealing: time-locking the passwords with drand, then installing the locked profile.',
+  remove: 'Taking the profile off your phone.',
+};
+const DONE: Record<string, string> = {
+  trial: 'The trial profile is on your phone',
+  seal: 'Sealed. The lock is on.',
+  remove: 'The profile is off your phone',
+};
+
+function notify(title: string, body?: string) {
+  try {
+    new Notification(title, { body, silent: false });
+  } catch { /* not available in this browser */ }
+}
+
+function Working({ text }: { text: string }) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="glass mb-4 flex items-center gap-3 px-4 py-3">
+      <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <span className="flex-1">{text}</span>
+      <span className="tabular-nums text-muted-fg">{seconds}s</span>
+    </div>
+  );
+}
 
 // One question per screen, so setting up a lock never feels like a form.
 const STEPS = ['Phone', 'Apps', 'Blocking', 'Time', 'Review'] as const;
@@ -57,6 +91,10 @@ export default function App() {
   const [sealing, setSealing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [step, setStep] = useState(0);
+  // True until the first look at the phone and the server comes back.
+  const [loading, setLoading] = useState(true);
+  // True while the phone itself is being read (after the lock has shown).
+  const [checkingPhone, setCheckingPhone] = useState(true);
 
   // Fill the steps from a running trial, so changing it starts from what's on the phone.
   const loadFromLock = useCallback((l: LockView) => {
@@ -74,18 +112,32 @@ export default function App() {
     }
   }, []);
 
-  const refresh = useCallback(async () => {
+  // Every phone query goes through cfgutil one at a time, so overlapping
+  // refreshes only pile up behind each other. Run one at a time.
+  const refreshing = useRef<Promise<void> | null>(null);
+  const refresh = useCallback(() => {
+    refreshing.current ??= doRefresh().finally(() => { refreshing.current = null; });
+    return refreshing.current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The lock comes from the server in well under a second; anything that
+  // touches the phone takes seconds per cfgutil call, so it fills in after.
+  const doRefresh = async () => {
     setError(null);
     try {
       const cfg = await call<{ server: string }>('GET', '/api/config');
       setServer(cfg.server);
       const host = new URL(cfg.server).hostname;
       if (normalizeDomain(host)) setAllowSites(ds => ds.includes(host) ? ds : [...ds, host]);
+      const quick = await call<{ lock: LockView | null }>('GET', '/api/lock?phone=0');
+      setLock(quick.lock);
+      if (quick.lock?.phase === 'trial') loadFromLock(quick.lock);
+      setLoading(false);
+
       const state = await call<{ lock: LockView | null; installed: boolean | null; device: Device | null }>('GET', '/api/lock');
       setDevice(state.device);
-      setLock(state.lock);
       setInstalled(state.installed);
-      if (state.lock?.phase === 'trial') loadFromLock(state.lock);
       if (state.device?.supervised) {
         const apps = await call<PhoneApp[]>('GET', '/api/apps');
         setPhoneApps(apps);
@@ -98,19 +150,27 @@ export default function App() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+      setCheckingPhone(false);
     }
-  }, [loadFromLock]);
+  };
+
 
   useEffect(() => { refresh(); }, [refresh]);
 
   // On the first step, notice the phone being plugged in without a Refresh.
-  const waitingForPhone = step === 0 && !device;
+  const waitingForPhone = !checkingPhone && !device;
   useEffect(() => {
     if (!waitingForPhone) return;
+    let checking = false;
     const t = setInterval(async () => {
+      if (checking) return;
+      checking = true;
       const { device: d } = await call<{ device: Device | null }>('GET', '/api/device').catch(() => ({ device: null }));
+      checking = false;
       if (d) refresh();
-    }, 3000);
+    }, 4000);
     return () => clearInterval(t);
   }, [waitingForPhone, refresh]);
 
@@ -132,9 +192,12 @@ export default function App() {
     setNotice(null);
     try {
       await fn();
+      if (DONE[label]) notify(DONE[label]);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      if (WORKING[label]) notify('That didn’t work', message);
     } finally {
       setBusy(null);
     }
@@ -170,16 +233,26 @@ export default function App() {
   return (
     <div className="flex h-full">
       <aside className="drag flex w-[210px] shrink-0 flex-col px-2.5 pt-[52px] pb-3">
-        <p className="px-2 pb-1 text-[11px] font-semibold text-muted-fg">{showWizard ? (inTrial ? 'Change the trial' : 'Set up') : 'Baseline'}</p>
-        {showWizard ? (
-          <Stepper step={step} onGo={i => i < step && setStep(i)} />
-        ) : (
-          <div className="rounded-md bg-primary px-2 py-[5px] text-primary-fg">Your lock</div>
+        {hasLock && (
+          <>
+            <p className="px-2 pb-1 text-[11px] font-semibold text-muted-fg">Baseline</p>
+            <button onClick={() => setEditing(false)}
+              className={`mb-4 w-full rounded-md px-2 py-[5px] text-left ${!showWizard ? 'bg-primary text-primary-fg' : 'hover:bg-muted'}`}>
+              Your lock
+            </button>
+          </>
         )}
+        <p className="px-2 pb-1 text-[11px] font-semibold text-muted-fg">{hasLock ? (inTrial ? 'Trial settings' : 'Settings (sealed)') : 'Set up'}</p>
+        <Stepper step={showWizard ? step : -1}
+          canGo={i => (showWizard ? (editing || i < step) : inTrial)}
+          onGo={i => {
+            if (!showWizard && lock) { loadFromLock(lock); setEditing(true); }
+            setStep(i);
+          }} />
         <div className="mt-auto space-y-1 px-2 text-[11px] text-muted-fg">
           <p className="flex items-center gap-1.5">
             <span className={`h-[7px] w-[7px] rounded-full ${device?.supervised ? 'bg-[#34C759]' : device ? 'bg-[#FF9F0A]' : 'bg-muted-fg/50'}`} />
-            {device ? `${device.name}${device.supervised ? '' : ' · not supervised'}` : 'No iPhone connected'}
+            {checkingPhone && !device ? 'Looking for your iPhone…' : device ? `${device.name}${device.supervised ? '' : ' · not supervised'}` : 'No iPhone connected'}
           </p>
           <p className="truncate">{server.replace('https://', '') || '…'}</p>
         </div>
@@ -188,17 +261,19 @@ export default function App() {
       <main className="content flex min-w-0 flex-1 flex-col">
         <header className="drag flex h-[52px] shrink-0 items-center justify-between px-5">
           <h1 className="text-[13px] font-semibold">{title}</h1>
-          <button className={secondary} onClick={() => act('refresh', async () => {})}>
+          <button className={secondary} onClick={() => { setCheckingPhone(true); act('refresh', async () => {}); }}>
             {busy === 'refresh' ? 'Checking…' : 'Refresh'}
           </button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-8 pt-2 pb-8">
           <div className="mx-auto max-w-[620px]">
+            {loading && <Working text="Loading your lock…" />}
+            {busy && WORKING[busy] && <Working text={WORKING[busy]} />}
             {error && <div className="glass mb-4 px-4 py-2.5 text-destructive">{error}</div>}
             {notice && <div className="glass mb-4 px-4 py-2.5 text-primary">{notice}</div>}
 
-            {!showWizard && lock ? (
+            {loading ? null : !showWizard && lock ? (
               <LockStatus lock={lock} installed={installed} device={device} busy={busy}
                 onSeal={() => setSealing(true)}
                 onEdit={() => { loadFromLock(lock); setEditing(true); setStep(1); }}
@@ -264,18 +339,24 @@ export default function App() {
   );
 }
 
-function Stepper({ step, onGo }: { step: number; onGo: (i: number) => void }) {
+// The setup steps, always in the sidebar. step is -1 when the lock's status
+// page is showing instead.
+function Stepper({ step, canGo, onGo }: { step: number; canGo: (i: number) => boolean; onGo: (i: number) => void }) {
   return (
     <nav className="space-y-0.5">
-      {STEPS.map((s, i) => (
-        <button key={s} onClick={() => onGo(i)} disabled={i > step}
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left ${i === step ? 'bg-primary text-primary-fg' : i < step ? 'hover:bg-muted' : 'text-muted-fg'}`}>
-          <span className={`flex h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-semibold ${i === step ? 'bg-white/25' : i < step ? 'bg-primary text-primary-fg' : 'bg-muted'}`}>
-            {i < step ? '✓' : i + 1}
-          </span>
-          {s}
-        </button>
-      ))}
+      {STEPS.map((s, i) => {
+        const current = i === step;
+        const done = step < 0 ? true : i < step;
+        return (
+          <button key={s} onClick={() => !current && canGo(i) && onGo(i)} disabled={!current && !canGo(i)}
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left ${current ? 'bg-primary text-primary-fg' : canGo(i) ? 'hover:bg-muted' : 'text-muted-fg'}`}>
+            <span className={`flex h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-semibold ${current ? 'bg-white/25' : done ? 'bg-primary text-primary-fg' : 'bg-muted'}`}>
+              {done && !current ? '✓' : i + 1}
+            </span>
+            {s}
+          </button>
+        );
+      })}
     </nav>
   );
 }
