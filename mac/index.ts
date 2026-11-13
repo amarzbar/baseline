@@ -86,16 +86,23 @@ app.get('/api/apps', route(async () => {
   return apps.map(a => ({ ...a, suggested: suggestKeep(a) }));
 }));
 
+// Icons never hold a request open: the browser only keeps six connections to
+// this server, and slow icon fetches would block installs behind them. A miss
+// answers 404 at once and fetches in the background; the page asks again later.
 const icons = new Map<string, Buffer | null>();
-app.get('/api/icon/:bundleId', async (req, res) => {
+const fetching = new Set<string>();
+
+app.get('/api/icon/:bundleId', (req, res) => {
   const id = req.params.bundleId;
-  if (!icons.has(id)) {
-    const device = await cfg.getDevice().catch(() => null);
-    icons.set(id, device ? await cfg.getAppIcon(device.ecid, id) : null);
-  }
   const png = icons.get(id);
-  if (!png) return void res.status(404).end();
-  res.type('png').set('Cache-Control', 'max-age=86400').send(png);
+  if (png) return void res.type('png').set('Cache-Control', 'max-age=86400').send(png);
+  res.status(icons.has(id) ? 404 : 202).end();
+  if (icons.has(id) || fetching.has(id)) return;
+  fetching.add(id);
+  cfg.getDevice()
+    .then(device => (device ? cfg.getAppIcon(device.ecid, id) : null))
+    .catch(() => null)
+    .then(data => { icons.set(id, data); fetching.delete(id); });
 });
 
 // Find an app by name on the App Store, for apps not installed yet.

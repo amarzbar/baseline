@@ -689,12 +689,16 @@ function Expander({ open, onToggle, title, children }: { open: boolean; onToggle
 }
 
 function AppRow({ app, icon, checked, onToggle, hint }: { app: AllowedApp; icon?: string; checked: boolean; onToggle: () => void; hint?: string }) {
+  // The server fetches icons in the background, so a missing one is retried
+  // a few times before falling back to the letter.
+  const [tries, setTries] = useState(0);
   const [iconOk, setIconOk] = useState(true);
   return (
     <label className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-muted">
       <input type="checkbox" checked={checked} onChange={onToggle} className="h-4 w-4 accent-[var(--primary)]" />
       {icon && iconOk
-        ? <img src={icon} alt="" className="h-7 w-7 rounded-lg" onError={() => setIconOk(false)} />
+        ? <img src={tries ? `${icon}?try=${tries}` : icon} alt="" className="h-7 w-7 rounded-lg"
+            onError={() => (tries < 12 ? setTimeout(() => setTries(t => t + 1), 6000 + Math.random() * 4000) : setIconOk(false))} />
         : <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary text-[11px] text-secondary-fg">{app.name[0]}</span>}
       <span className="min-w-0 flex-1 truncate text-[13px]">{app.name}</span>
       {hint && <span className="text-[11px] text-muted-fg">{hint}</span>}
