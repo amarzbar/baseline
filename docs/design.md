@@ -97,8 +97,11 @@ Mac (127.0.0.1:8770)                 Mavis (Docker, behind NPM, tailnet)     dra
 - NextDNS settings can be changed from another device.
 - If drand shut down for good before the unlock date, the password could not be recovered.
   The ciphertext opens any time *after* the date, so a late unlock still works.
-- `allowListedAppBundleIDs` is deprecated in iOS 27 in favour of declarative management.
-  It still works there, but will need replacing eventually.
+- `allowListedAppBundleIDs` is deprecated in iOS 27 in favour of the declarative
+  `com.apple.configuration.app.settings` (`Allowed.AllowedApps`, same semantics, plus
+  `DeniedApps`). It still works on iOS 27. Declarations can't be installed over USB as a profile,
+  only delivered by an MDM server, so the long-term fix is a small MDM server on Mavis that the
+  phone enrolls in. Not urgent until an iOS release drops the old key.
 
 ## To verify during the first trial
 
