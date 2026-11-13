@@ -16,6 +16,7 @@ const PHASE_LABEL: Record<string, string> = {
 export default function LockScreen({ summary }: { summary: Summary }) {
   const { lock } = summary;
   const [password, setPassword] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<{ label: string; password: string | null }[]>([]);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
 
@@ -25,7 +26,9 @@ export default function LockScreen({ summary }: { summary: Summary }) {
 
   async function reveal() {
     try {
-      setPassword((await api.reveal(lock!.id)).password);
+      const r = await api.reveal(lock!.id);
+      setPassword(r.password);
+      setAccounts(r.accounts ?? []);
     } catch (err) {
       setRevealError(err instanceof Error ? err.message : String(err));
     }
@@ -56,6 +59,12 @@ export default function LockScreen({ summary }: { summary: Summary }) {
           {password ? (
             <>
               <p className="mt-3 select-all break-all rounded-2xl bg-muted px-4 py-3 font-mono text-[17px]">{password}</p>
+              {accounts.map(a => (
+                <div key={a.label} className="mt-3">
+                  <p className="text-[13px] text-muted-fg">{a.label}</p>
+                  <p className="select-all break-all rounded-2xl bg-muted px-4 py-3 font-mono text-[15px]">{a.password ?? 'still locked'}</p>
+                </div>
+              ))}
               <p className="mt-3 text-[13px] leading-relaxed text-muted-fg">
                 Settings → General → VPN &amp; Device Management → Baseline (locked) → Remove, then enter this password.
                 Or plug into your Mac and remove it from Baseline there.
@@ -75,7 +84,7 @@ export default function LockScreen({ summary }: { summary: Summary }) {
         <div className="glass px-5 py-4">
           <p className="label">Removal password</p>
           <p className="mt-2 text-[14px] leading-relaxed text-muted-fg">
-            Sealed with tlock to drand round #{lock.round?.toLocaleString()}. Nobody, not this server and not you, can read it before {fmtDate(lock.unlockAt!)}.
+            Sealed with tlock to drand round #{lock.round?.toLocaleString()}{lock.accounts.length ? `, along with the passwords for ${lock.accounts.join(', ')}` : ''}. Nobody, not this server and not you, can read them before {fmtDate(lock.unlockAt!)}.
           </p>
         </div>
       )}
@@ -94,11 +103,17 @@ export default function LockScreen({ summary }: { summary: Summary }) {
       </div>
 
       <div className="glass px-5 py-4">
-        <p className="label">Sites that load</p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {lock.domains.map(d => <span key={d} className="rounded-full bg-secondary px-2.5 py-1 text-[12px] text-secondary-fg">{d}</span>)}
-        </div>
-        <p className="mt-3 text-[13px] text-muted-fg">{lock.dnsServerUrl ? 'DNS goes through your filtering resolver and can’t be switched off.' : 'No DNS filter.'}</p>
+        <p className="label">Filtering</p>
+        <p className="mt-2 text-[14px]">
+          {lock.dnsServerUrl ? (lock.dnsServerUrl.includes('nextdns') ? 'NextDNS' : 'Encrypted DNS') + ', locked on' : 'No DNS filter'}
+          {' · '}
+          {lock.webFilter === 'off' ? 'web filter off' : lock.webFilter === 'block' ? `${lock.domains.length} sites blocked` : `only ${lock.domains.length} sites load`}
+        </p>
+        {lock.webFilter !== 'off' && lock.domains.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {lock.domains.map(d => <span key={d} className="rounded-full bg-secondary px-2.5 py-1 text-[12px] text-secondary-fg">{d}</span>)}
+          </div>
+        )}
       </div>
 
       <details className="glass px-5 py-4">
@@ -119,7 +134,7 @@ export default function LockScreen({ summary }: { summary: Summary }) {
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted-fg">
           <li>A full restore through recovery mode with a computer.</li>
           <li>The supervision identity on your Mac: Apple Configurator can remove the profile without the password.</li>
-          <li>Changing your NextDNS settings from another device.</li>
+          <li>Changing your NextDNS settings from another device, unless that account (and its email) were locked when sealing.</li>
         </ul>
       </details>
     </div>

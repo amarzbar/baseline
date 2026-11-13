@@ -63,6 +63,7 @@ function profileFor(lock: LockView, removalPassword?: string): string {
     identifier: lock.profileIdentifier,
     bundleIds: lock.apps.map(a => a.bundleId),
     allowWebApps: lock.allowWebApps,
+    webFilter: lock.webFilter,
     domains: lock.domains,
     dnsServerUrl: lock.dnsServerUrl,
     removalPassword,
@@ -141,25 +142,113 @@ app.post('/api/seal', route(async req => {
   const lock = await server<LockView>('GET', `/api/locks/${req.body.lockId}`);
   if (lock.phase !== 'trial') throw new Error('Only a running trial can be sealed');
 
+  const pending = pendingAccounts.get(lock.id) ?? [];
+  if (pending.some(a => !a.confirmed)) throw new Error('Finish changing every account password first, or remove it from the list');
+
   const unlockAt = new Date(Date.now() + lock.durationDays * DAY);
   let password: string | null = randomBytes(18).toString('base64url');
   const { round, ciphertext } = await timeLock(password, unlockAt);
   // Check the lock really holds before trusting it with the phone.
   if (await timeUnlock(ciphertext) !== null) throw new Error('The time-lock opened early. Not sealing.');
+  const accounts = [];
+  for (const a of pending) accounts.push({ label: a.label, ciphertext: (await timeLock(a.password, unlockAt)).ciphertext });
 
-  await server('POST', `/api/locks/${lock.id}/seal`, { round, unlockAt: unlockAt.toISOString(), ciphertext });
+  await server('POST', `/api/locks/${lock.id}/seal`, { round, unlockAt: unlockAt.toISOString(), ciphertext, accounts });
   try {
     await cfg.installProfile(device.ecid, profileFor(lock, password));
     password = null;
     const ids = await cfg.installedProfileIds(device.ecid);
     if (!ids.includes(lock.profileIdentifier)) throw new Error('The phone did not report the locked profile after installing it');
   } catch (err) {
+    // The account passwords stay in memory, so a retry (or Discard) still has them.
     await server('POST', `/api/locks/${lock.id}/seal-failed`).catch(() => {});
     throw err;
   } finally {
     password = null;
   }
+  pendingAccounts.delete(lock.id);
+  await copy('');
   return server<LockView>('POST', `/api/locks/${lock.id}/sealed`);
+}));
+
+// ---- Accounts locked with the profile -----------------------------------------
+//
+// Passwords for accounts that could undo the lock (the DNS provider, its
+// mailbox). Each is made here, goes to the clipboard so the user can paste it
+// into the site's change-password page, and is never shown, stored or logged.
+// Sealing time-locks them with the profile's password.
+
+interface PendingAccount { label: string; password: string; confirmed: boolean }
+const pendingAccounts = new Map<string, PendingAccount[]>();
+
+function copy(text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = execFile('pbcopy', err => (err ? reject(err) : resolve()));
+    p.stdin?.end(text);
+  });
+}
+
+const accountList = (lockId: string) =>
+  (pendingAccounts.get(lockId) ?? []).map(a => ({ label: a.label, confirmed: a.confirmed }));
+
+app.get('/api/accounts/:lockId', route(req => accountList(req.params.lockId)));
+
+app.post('/api/accounts/:lockId', route(async req => {
+  const label = String(req.body?.label ?? '').trim();
+  if (!label) throw new Error('Name the account, like "NextDNS"');
+  const list = pendingAccounts.get(req.params.lockId) ?? [];
+  // Letters, digits and a symbol, so it passes most sites' password rules.
+  list.push({ label, password: `${randomBytes(18).toString('base64url')}#7a`, confirmed: false });
+  pendingAccounts.set(req.params.lockId, list);
+  await copy(list[list.length - 1].password);
+  return accountList(req.params.lockId);
+}));
+
+app.post('/api/accounts/:lockId/:index/copy', route(async req => {
+  const a = pendingAccounts.get(req.params.lockId)?.[Number(req.params.index)];
+  if (!a) throw new Error('No such account');
+  await copy(a.password);
+}));
+
+app.post('/api/accounts/:lockId/:index/confirm', route(async req => {
+  const a = pendingAccounts.get(req.params.lockId)?.[Number(req.params.index)];
+  if (!a) throw new Error('No such account');
+  a.confirmed = true;
+  await copy('');
+  return accountList(req.params.lockId);
+}));
+
+// Giving up on locking accounts: hand the passwords back, since they may
+// already be set on the sites.
+app.post('/api/accounts/:lockId/discard', route(async req => {
+  const list = pendingAccounts.get(req.params.lockId) ?? [];
+  pendingAccounts.delete(req.params.lockId);
+  await copy('');
+  return list.map(a => ({ label: a.label, password: a.password }));
+}));
+
+// Does this encrypted DNS server actually block? Asks it for a few names over
+// DNS-over-HTTPS and reports which come back blocked (no address, or 0.0.0.0).
+app.post('/api/dns-test', route(async req => {
+  const url = String(req.body?.url ?? '');
+  if (!url.startsWith('https://')) throw new Error('Enter an https:// DNS-over-HTTPS address');
+  const query = (name: string) => {
+    const labels = Buffer.concat([...name.split('.').map(l => Buffer.concat([Buffer.from([l.length]), Buffer.from(l)])), Buffer.from([0])]);
+    return Buffer.concat([Buffer.from([0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0]), labels, Buffer.from([0, 1, 0, 1])]).toString('base64url');
+  };
+  const names = ['instagram.com', 'tiktok.com', 'reddit.com', 'whatsapp.net', 'example.com'];
+  return Promise.all(names.map(async name => {
+    try {
+      const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}dns=${query(name)}`, { headers: { accept: 'application/dns-message' } });
+      const b = Buffer.from(await res.arrayBuffer());
+      if (!res.ok || b.length < 12) return { name, result: 'error' };
+      const answers = b.readUInt16BE(6);
+      const blocked = (b[3] & 0xf) === 3 || answers === 0 || b.subarray(-4).equals(Buffer.from([0, 0, 0, 0]));
+      return { name, result: blocked ? 'blocked' : 'resolves' };
+    } catch {
+      return { name, result: 'error' };
+    }
+  }));
 }));
 
 // Take the profile off: any time in a trial, or once the lock has opened.

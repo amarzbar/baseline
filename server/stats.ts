@@ -5,7 +5,7 @@ import type { Data } from './db.ts';
 const DAY = 86_400_000;
 
 export function lockView(lock: Lock, now: Date): LockView {
-  const { ciphertext: _ciphertext, ...rest } = lock;
+  const { ciphertext: _ciphertext, accounts, ...rest } = lock;
   let phase: LockView['phase'];
   switch (lock.status) {
     case 'trial': phase = now > new Date(lock.trialEndsAt) ? 'trial-expired' : 'trial'; break;
@@ -13,7 +13,13 @@ export function lockView(lock: Lock, now: Date): LockView {
     case 'sealed': phase = lock.unlockAt && now >= new Date(lock.unlockAt) ? 'unlockable' : 'locked'; break;
     default: phase = lock.status;
   }
-  return { ...rest, phase };
+  return {
+    ...rest,
+    // Locks from before these settings existed used an allowlist.
+    webFilter: lock.webFilter ?? 'allow',
+    accounts: (accounts ?? []).map(a => a.label),
+    phase,
+  };
 }
 
 export function currentLock(data: Data): Lock | null {

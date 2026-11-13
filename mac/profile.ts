@@ -4,11 +4,16 @@
 import { randomUUID } from 'node:crypto';
 import plist from 'plist';
 import { WEB_APP_BUNDLE_ID } from '../shared/apps.ts';
+import type { WebFilter } from '../shared/types.ts';
+
+// Apple's cap on DenyListURLs.
+export const MAX_BLOCKED_URLS = 500;
 
 export interface ProfileOptions {
   identifier: string;
   bundleIds: string[];
   allowWebApps: boolean;
+  webFilter: WebFilter;
   domains: string[];
   dnsServerUrl: string | null;
   // Present only when sealing. Without it the profile is a freely removable trial.
@@ -46,13 +51,25 @@ export function buildProfile(o: ProfileOptions): Record<string, unknown> {
       allowMarketplaceAppInstallation: false,
       allowWebDistributionAppInstallation: false,
     }),
-    payload('com.apple.webcontent-filter', 'Web allowlist', {
-      FilterType: 'BuiltIn',
-      // Allowlist mode: WebKit everywhere (Safari, web apps, in-app browsers)
-      // can only load these sites.
-      AllowListBookmarks: o.domains.map(d => ({ URL: `https://${d}/`, Title: d })),
-    }),
   ];
+
+  // The filter covers WebKit everywhere: Safari, web apps and in-app browsers.
+  // "allow" also breaks sign-in and payment pages it doesn't list, which is
+  // why DNS does the blocking by default and the filter is off.
+  if (o.webFilter === 'allow') {
+    content.push(payload('com.apple.webcontent-filter', 'Web allowlist', {
+      FilterType: 'BuiltIn',
+      AllowListBookmarks: o.domains.map(d => ({ URL: `https://${d}/`, Title: d })),
+    }));
+  } else if (o.webFilter === 'block' && o.domains.length) {
+    // Entries are matched as URL prefixes, so each site gets a bare and a www form.
+    const urls = [...new Set(o.domains.flatMap(d => [`https://${d}`, `https://www.${d.replace(/^www\./, '')}`]))];
+    if (urls.length > MAX_BLOCKED_URLS) throw new Error(`Too many blocked sites: Apple allows ${MAX_BLOCKED_URLS} entries`);
+    content.push(payload('com.apple.webcontent-filter', 'Blocked sites', {
+      FilterType: 'BuiltIn',
+      DenyListURLs: urls,
+    }));
+  }
 
   if (o.dnsServerUrl) {
     content.push(payload('com.apple.dnsSettings.managed', 'Filtered DNS', {

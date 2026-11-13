@@ -9,9 +9,9 @@ const sealedAt = new Date(2026, 10, 2, 9); // Mon 2 Nov 2026, local
 const lock = (over: Partial<Lock> = {}): Lock => ({
   id: 'l1', createdAt: new Date(sealedAt.getTime() - 3 * DAY).toISOString(), status: 'sealed',
   trialEndsAt: new Date(sealedAt.getTime() + 4 * DAY).toISOString(), durationDays: 90,
-  apps: [], domains: [], allowWebApps: true, dnsServerUrl: null, baselineDailyMinutes: 200,
+  apps: [], webFilter: 'off', domains: [], allowWebApps: true, dnsServerUrl: null, baselineDailyMinutes: 200,
   profileIdentifier: 'x', device: null, sealedAt: sealedAt.toISOString(),
-  unlockAt: new Date(sealedAt.getTime() + 90 * DAY).toISOString(), round: 1, ciphertext: 'secret', profileSeenAt: null,
+  unlockAt: new Date(sealedAt.getTime() + 90 * DAY).toISOString(), round: 1, ciphertext: 'secret', accounts: [{ label: 'NextDNS', ciphertext: 'acct-secret' }], profileSeenAt: null,
   ...over,
 });
 const data = (l: Lock, extra: Partial<Data> = {}): Data => ({ locks: [l], journal: [], screenTime: [], health: [], ...extra });
@@ -25,8 +25,11 @@ test('phases come from the dates, not the stored status', () => {
   assert.equal(lockView(t, new Date(sealedAt.getTime() + 5 * DAY)).phase, 'trial-expired');
 });
 
-test('the API view never carries the ciphertext', () => {
-  assert.ok(!('ciphertext' in lockView(lock(), new Date())));
+test('the API view never carries a ciphertext', () => {
+  const v = lockView(lock(), new Date());
+  assert.ok(!('ciphertext' in v));
+  assert.deepEqual(v.accounts, ['NextDNS']);
+  assert.ok(!JSON.stringify(v).includes('secret'));
 });
 
 test('day count, days left and milestones', () => {

@@ -8,7 +8,7 @@ import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { normalizeDomain } from '../shared/apps.ts';
 import { timeUnlock } from '../shared/timelock.ts';
-import type { AllowedApp, Lock } from '../shared/types.ts';
+import type { AllowedApp, Lock, WebFilter } from '../shared/types.ts';
 import { isAuthed, login, requireAuth } from './auth.ts';
 import { db, PHOTO_DIR, save } from './db.ts';
 import { currentLock, localDate, lockView, mondayOf, summarize } from './stats.ts';
@@ -67,11 +67,13 @@ function parseLockSettings(body: Record<string, unknown>) {
   if (!apps.length || apps.some(a => typeof a?.bundleId !== 'string')) throw new HttpError(400, 'Pick at least one app');
   const domains = (Array.isArray(body.domains) ? body.domains : []).map(d => normalizeDomain(String(d)));
   if (domains.some(d => d === null)) throw new HttpError(400, 'One of the domains is not valid');
+  const webFilter: WebFilter = body.webFilter === 'allow' || body.webFilter === 'block' ? body.webFilter : 'off';
   const baseline = body.baselineDailyMinutes == null ? null : Math.round(Number(body.baselineDailyMinutes));
   return {
     durationDays,
     trialDays,
     apps: apps.map(a => ({ bundleId: a.bundleId, name: String(a.name ?? a.bundleId) })),
+    webFilter,
     domains: [...new Set(domains as string[])],
     allowWebApps: body.allowWebApps !== false,
     dnsServerUrl: typeof body.dnsServerUrl === 'string' && body.dnsServerUrl.startsWith('https://') ? body.dnsServerUrl : null,
@@ -100,6 +102,7 @@ app.post('/api/locks', route(req => {
     trialEndsAt: new Date(created.getTime() + s.trialDays * DAY).toISOString(),
     durationDays: s.durationDays,
     apps: s.apps,
+    webFilter: s.webFilter,
     domains: s.domains,
     allowWebApps: s.allowWebApps,
     dnsServerUrl: s.dnsServerUrl,
@@ -110,6 +113,7 @@ app.post('/api/locks', route(req => {
     unlockAt: null,
     round: null,
     ciphertext: null,
+    accounts: [],
     profileSeenAt: null,
   };
   db.locks.push(lock);
@@ -140,7 +144,7 @@ app.post('/api/locks/:id/cancel', route(req => {
 app.post('/api/locks/:id/seal', route(req => {
   const lock = findLock(req.params.id);
   if (view(lock).phase !== 'trial') throw new HttpError(409, 'Only a running trial can be sealed');
-  const { round, unlockAt, ciphertext } = req.body ?? {};
+  const { round, unlockAt, ciphertext, accounts } = req.body ?? {};
   const unlock = new Date(String(unlockAt));
   const earliest = now().getTime() + lock.durationDays * DAY - 10 * 60_000;
   if (Number.isNaN(unlock.getTime()) || unlock.getTime() < earliest) {
@@ -149,7 +153,18 @@ app.post('/api/locks/:id/seal', route(req => {
   if (!Number.isInteger(round) || typeof ciphertext !== 'string' || !ciphertext.includes('BEGIN AGE ENCRYPTED FILE')) {
     throw new HttpError(400, 'Missing the time-locked password');
   }
-  Object.assign(lock, { status: 'sealing', round, unlockAt: unlock.toISOString(), ciphertext });
+  const isSealed = (c: unknown) => typeof c === 'string' && c.includes('BEGIN AGE ENCRYPTED FILE');
+  const extra = Array.isArray(accounts) ? accounts : [];
+  if (extra.some(a => typeof a?.label !== 'string' || !a.label.trim() || !isSealed(a.ciphertext))) {
+    throw new HttpError(400, 'Every locked account needs a name and a time-locked password');
+  }
+  Object.assign(lock, {
+    status: 'sealing',
+    round,
+    unlockAt: unlock.toISOString(),
+    ciphertext,
+    accounts: extra.map(a => ({ label: String(a.label).trim().slice(0, 80), ciphertext: a.ciphertext })),
+  });
   save();
   return view(lock);
 }));
@@ -167,7 +182,7 @@ app.post('/api/locks/:id/sealed', route(req => {
 app.post('/api/locks/:id/seal-failed', route(req => {
   const lock = findLock(req.params.id);
   if (lock.status !== 'sealing') throw new HttpError(409, 'This lock is not being sealed');
-  Object.assign(lock, { status: 'trial', round: null, unlockAt: null, ciphertext: null });
+  Object.assign(lock, { status: 'trial', round: null, unlockAt: null, ciphertext: null, accounts: [] });
   save();
   return view(lock);
 }));
@@ -189,7 +204,9 @@ app.post('/api/locks/:id/reveal', route(async (req, res) => {
     res.status(423).json({ error: 'Still locked', unlockAt: lock.unlockAt });
     return;
   }
-  return { password };
+  const accounts = [];
+  for (const a of lock.accounts ?? []) accounts.push({ label: a.label, password: await timeUnlock(a.ciphertext) });
+  return { password, accounts };
 }));
 
 app.post('/api/locks/:id/removed', route(req => {

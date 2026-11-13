@@ -20,7 +20,7 @@ export const api = {
   deleteMoment: (id: string) => call('DELETE', `/api/journal/${id}`),
   logScreenTime: (avgDailyMinutes: number, weekStart?: string) =>
     call('POST', '/api/screentime', { avgDailyMinutes, weekStart }),
-  reveal: (id: string) => call<{ password: string }>('POST', `/api/locks/${id}/reveal`),
+  reveal: (id: string) => call<{ password: string; accounts: { label: string; password: string | null }[] }>('POST', `/api/locks/${id}/reveal`),
 };
 
 // Shrink a photo on the phone before upload: 1600px on the long side, JPEG.

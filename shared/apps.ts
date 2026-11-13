@@ -58,6 +58,13 @@ export function suggestKeep(app: AllowedApp): boolean {
   return SUGGEST.some(w => new RegExp(`(^|[^a-z])${w}`).test(hay));
 }
 
+// A starting point for the web filter's block mode. DNS is the main blocker;
+// this is the second net, so it stays short.
+export const DEFAULT_BLOCKED_SITES = [
+  'instagram.com', 'facebook.com', 'tiktok.com', 'x.com', 'twitter.com', 'threads.net',
+  'reddit.com', 'snapchat.com', 'youtube.com', 'm.youtube.com',
+];
+
 export function normalizeDomain(input: string): string | null {
   const host = input.trim().toLowerCase()
     .replace(/^[a-z]+:\/\//, '')

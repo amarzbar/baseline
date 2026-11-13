@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { BUILT_IN_APPS, normalizeDomain } from '../../../shared/apps.ts';
-import type { AllowedApp, LockView } from '../../../shared/types.ts';
+import { BUILT_IN_APPS, DEFAULT_BLOCKED_SITES, normalizeDomain } from '../../../shared/apps.ts';
+import type { AllowedApp, LockView, WebFilter } from '../../../shared/types.ts';
 
 interface Device { ecid: string; name: string; supervised: boolean; iosVersion: string }
 interface PhoneApp extends AllowedApp { suggested: boolean }
@@ -24,7 +24,15 @@ const primary = `${button} bg-primary text-primary-fg`;
 const secondary = `${button} bg-secondary text-secondary-fg`;
 
 // One question per screen, so setting up a lock never feels like a form.
-const STEPS = ['Phone', 'Apps', 'Sites', 'Time', 'Review'] as const;
+const STEPS = ['Phone', 'Apps', 'Blocking', 'Time', 'Review'] as const;
+
+// A NextDNS profile ID, or any DNS-over-HTTPS address. Null if it's neither.
+function dnsUrl(input: string): string | null {
+  const v = input.trim();
+  if (!v) return null;
+  if (/^https:\/\/[^\s]+$/.test(v)) return v;
+  return /^[a-z0-9]{4,12}$/i.test(v) ? `https://dns.nextdns.io/${v}` : null;
+}
 
 export default function App() {
   const [server, setServer] = useState('');
@@ -34,9 +42,11 @@ export default function App() {
   const [phoneApps, setPhoneApps] = useState<PhoneApp[]>([]);
   const [storeApps, setStoreApps] = useState<AllowedApp[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [domains, setDomains] = useState<string[]>(['amarzbar.xyz']);
+  const [webFilter, setWebFilter] = useState<WebFilter>('off');
+  const [blockSites, setBlockSites] = useState<string[]>(DEFAULT_BLOCKED_SITES);
+  const [allowSites, setAllowSites] = useState<string[]>(['amarzbar.xyz']);
   const [allowWebApps, setAllowWebApps] = useState(true);
-  const [nextdns, setNextdns] = useState('');
+  const [dns, setDns] = useState('');
   const [durationDays, setDurationDays] = useState(90);
   const [trialDays, setTrialDays] = useState(7);
   const [baseH, setBaseH] = useState('');
@@ -52,9 +62,11 @@ export default function App() {
   const loadFromLock = useCallback((l: LockView) => {
     setSelected(new Set(l.apps.map(a => a.bundleId)));
     setStoreApps(l.apps);
-    setDomains(l.domains);
+    setWebFilter(l.webFilter);
+    if (l.webFilter === 'block') setBlockSites(l.domains);
+    if (l.webFilter === 'allow') setAllowSites(l.domains);
     setAllowWebApps(l.allowWebApps);
-    setNextdns(l.dnsServerUrl?.replace('https://dns.nextdns.io/', '') ?? '');
+    setDns(l.dnsServerUrl?.replace('https://dns.nextdns.io/', '') ?? '');
     setDurationDays(l.durationDays);
     if (l.baselineDailyMinutes != null) {
       setBaseH(String(Math.floor(l.baselineDailyMinutes / 60)));
@@ -68,7 +80,7 @@ export default function App() {
       const cfg = await call<{ server: string }>('GET', '/api/config');
       setServer(cfg.server);
       const host = new URL(cfg.server).hostname;
-      if (normalizeDomain(host)) setDomains(ds => ds.includes(host) ? ds : [...ds, host]);
+      if (normalizeDomain(host)) setAllowSites(ds => ds.includes(host) ? ds : [...ds, host]);
       const state = await call<{ lock: LockView | null; installed: boolean | null; device: Device | null }>('GET', '/api/lock');
       setDevice(state.device);
       setLock(state.lock);
@@ -138,16 +150,17 @@ export default function App() {
     durationDays,
     trialDays,
     apps: [...selected].map(id => allApps.get(id)!).filter(Boolean),
-    domains,
+    webFilter,
+    domains: webFilter === 'block' ? blockSites : webFilter === 'allow' ? allowSites : [],
     allowWebApps,
-    dnsServerUrl: nextdns.trim() ? `https://dns.nextdns.io/${nextdns.trim()}` : null,
+    dnsServerUrl: dnsUrl(dns),
     baselineDailyMinutes: baseH || baseM ? (Number(baseH) || 0) * 60 + (Number(baseM) || 0) : null,
   });
 
   const canContinue = [
     Boolean(device?.supervised),
     selected.size > 0,
-    domains.length > 0,
+    (webFilter !== 'allow' || allowSites.length > 0) && (!dns.trim() || dnsUrl(dns) !== null),
     durationDays >= 90,
     true,
   ][step];
@@ -183,15 +196,17 @@ export default function App() {
                 addStoreApp={a => { setStoreApps(s => [...s, a]); setSelected(s => new Set(s).add(a.bundleId)); }} />
             )}
             {step === 2 && (
-              <SitesStep domains={domains} setDomains={setDomains} allowWebApps={allowWebApps}
-                setAllowWebApps={setAllowWebApps} nextdns={nextdns} setNextdns={setNextdns} />
+              <BlockingStep dns={dns} setDns={setDns} webFilter={webFilter} setWebFilter={setWebFilter}
+                blockSites={blockSites} setBlockSites={setBlockSites} allowSites={allowSites} setAllowSites={setAllowSites}
+                allowWebApps={allowWebApps} setAllowWebApps={setAllowWebApps} />
             )}
             {step === 3 && (
               <TimeStep durationDays={durationDays} setDurationDays={setDurationDays} trialDays={trialDays}
                 setTrialDays={setTrialDays} trialLocked={inTrial} baseH={baseH} setBaseH={setBaseH} baseM={baseM} setBaseM={setBaseM} />
             )}
             {step === 4 && (
-              <ReviewStep apps={selected.size} domains={domains} allowWebApps={allowWebApps} dns={Boolean(nextdns.trim())}
+              <ReviewStep apps={selected.size} allowWebApps={allowWebApps} dns={dnsUrl(dns)}
+                webFilter={webFilter} sites={webFilter === 'block' ? blockSites : allowSites}
                 durationDays={durationDays} trialDays={trialDays} baseline={baseH || baseM ? `${baseH || 0}h ${baseM || 0}m` : null}
                 updating={inTrial} onGo={setStep} />
             )}
@@ -349,45 +364,104 @@ function AppsStep({ phoneApps, selected, toggle, storeApps, addStoreApp }: {
   );
 }
 
-function SitesStep({ domains, setDomains, allowWebApps, setAllowWebApps, nextdns, setNextdns }: {
-  domains: string[]; setDomains: (d: string[]) => void; allowWebApps: boolean; setAllowWebApps: (b: boolean) => void;
-  nextdns: string; setNextdns: (s: string) => void;
+function BlockingStep(p: {
+  dns: string; setDns: (s: string) => void;
+  webFilter: WebFilter; setWebFilter: (f: WebFilter) => void;
+  blockSites: string[]; setBlockSites: (d: string[]) => void;
+  allowSites: string[]; setAllowSites: (d: string[]) => void;
+  allowWebApps: boolean; setAllowWebApps: (b: boolean) => void;
 }) {
+  const [test, setTest] = useState<{ name: string; result: string }[] | null>(null);
+  const [testing, setTesting] = useState(false);
+  const url = dnsUrl(p.dns);
+
+  async function runTest() {
+    if (!url) return;
+    setTesting(true);
+    try {
+      setTest(await call('POST', '/api/dns-test', { url }));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const modes: { id: WebFilter; title: string; sub: string }[] = [
+    { id: 'off', title: 'Off', sub: 'DNS does the blocking. Sign-in and payment pages in apps keep working. (Recommended)' },
+    { id: 'block', title: 'Block these sites', sub: 'A second net under DNS, in every app that shows web pages.' },
+    { id: 'allow', title: 'Only allow these sites', sub: 'Strictest. Breaks any sign-in or payment page not on the list.' },
+  ];
+
+  return (
+    <>
+      <StepTitle n={3} title="How is the internet filtered?" sub="Your DNS filter (NextDNS) blocks sites for every app. It's locked on and can't be switched off from the phone." />
+
+      <div className="glass px-5 py-5">
+        <label className="block text-[15px]">NextDNS profile ID, or any DNS-over-HTTPS address
+          <input className={`${input} mt-1 w-full`} placeholder="e.g. abc123" value={p.dns}
+            onChange={e => { p.setDns(e.target.value); setTest(null); }} />
+        </label>
+        {p.dns.trim() && !url && <p className="mt-2 text-[13px] text-destructive">That isn't a NextDNS ID or an https:// address.</p>}
+        {!p.dns.trim() && <p className="mt-2 text-[13px] text-muted-fg">Leave empty for no DNS filter.</p>}
+        {url && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button className={secondary} onClick={runTest} disabled={testing}>{testing ? 'Testing…' : 'Test it'}</button>
+            {test?.map(t => (
+              <span key={t.name} className={`rounded-full px-2.5 py-1 text-[12px] ${t.result === 'blocked' ? 'bg-secondary text-secondary-fg' : t.result === 'error' ? 'bg-red-100 text-destructive' : 'bg-muted text-muted-fg'}`}>
+                {t.name} {t.result === 'blocked' ? 'blocked' : t.result === 'error' ? 'error' : 'loads'}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="glass mt-4 px-5 py-5">
+        <p className="label mb-3">Web filter</p>
+        <div className="space-y-2">
+          {modes.map(m => (
+            <label key={m.id} className={`flex cursor-pointer gap-3 rounded-xl px-3 py-2.5 ${p.webFilter === m.id ? 'bg-secondary' : 'hover:bg-muted'}`}>
+              <input type="radio" name="webFilter" checked={p.webFilter === m.id} onChange={() => p.setWebFilter(m.id)} className="mt-1 accent-[var(--primary)]" />
+              <span><span className="block text-[15px]">{m.title}</span><span className="block text-[13px] text-muted-fg">{m.sub}</span></span>
+            </label>
+          ))}
+        </div>
+        {p.webFilter === 'block' && <SiteList sites={p.blockSites} setSites={p.setBlockSites} placeholder="Block another site, e.g. twitch.tv" />}
+        {p.webFilter === 'allow' && (
+          <>
+            <SiteList sites={p.allowSites} setSites={p.setAllowSites} placeholder="Allow a site, e.g. rbcroyalbank.com" />
+            <label className="mt-4 flex items-center gap-2 text-[14px]">
+              <input type="checkbox" checked={p.allowWebApps} onChange={e => p.setAllowWebApps(e.target.checked)} className="accent-[var(--primary)]" />
+              Home-screen web apps can open (they still only load the sites above)
+            </label>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function SiteList({ sites, setSites, placeholder }: { sites: string[]; setSites: (d: string[]) => void; placeholder: string }) {
   const [draft, setDraft] = useState('');
-  const [showDns, setShowDns] = useState(Boolean(nextdns));
   const add = () => {
     const d = normalizeDomain(draft);
-    if (d && !domains.includes(d)) setDomains([...domains, d]);
+    if (d && !sites.includes(d)) setSites([...sites, d]);
     if (d) setDraft('');
   };
   return (
-    <>
-      <StepTitle n={3} title="Which sites load?" sub="Only these work, in every app that shows web pages. Add each subdomain your web apps use, like salik.amarzbar.xyz." />
-      <div className="glass px-5 py-5">
-        <div className="flex flex-wrap gap-2">
-          {domains.map(d => (
-            <span key={d} className="flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-[14px] text-secondary-fg">
-              {d}
-              <button onClick={() => setDomains(domains.filter(x => x !== d))} aria-label={`Remove ${d}`}>×</button>
-            </span>
-          ))}
-        </div>
-        <div className="mt-4 flex gap-2">
-          <input className={`${input} flex-1`} placeholder="Add a site, e.g. rbcroyalbank.com" value={draft}
-            onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />
-          <button className={secondary} onClick={add}>Add</button>
-        </div>
-        <label className="mt-5 flex items-center gap-2 text-[14px]">
-          <input type="checkbox" checked={allowWebApps} onChange={e => setAllowWebApps(e.target.checked)} className="accent-[var(--primary)]" />
-          Home-screen web apps can open (they still only load the sites above)
-        </label>
+    <div className="mt-4">
+      <div className="flex flex-wrap gap-2">
+        {sites.map(d => (
+          <span key={d} className="flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-[14px]">
+            {d}
+            <button onClick={() => setSites(sites.filter(x => x !== d))} aria-label={`Remove ${d}`}>×</button>
+          </span>
+        ))}
       </div>
-      <Expander open={showDns} onToggle={() => setShowDns(s => !s)} title="Extra: filter DNS with NextDNS (optional)">
-        <label className="block text-[14px]">NextDNS profile ID
-          <input className={`${input} mt-1 w-full`} placeholder="e.g. abc123" value={nextdns} onChange={e => setNextdns(e.target.value)} />
-        </label>
-      </Expander>
-    </>
+      <div className="mt-3 flex gap-2">
+        <input className={`${input} flex-1`} placeholder={placeholder} value={draft}
+          onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />
+        <button className={secondary} onClick={add}>Add</button>
+      </div>
+    </div>
   );
 }
 
@@ -428,13 +502,14 @@ function TimeStep(p: {
 }
 
 function ReviewStep(p: {
-  apps: number; domains: string[]; allowWebApps: boolean; dns: boolean; durationDays: number; trialDays: number;
+  apps: number; allowWebApps: boolean; dns: string | null; webFilter: WebFilter; sites: string[];
+  durationDays: number; trialDays: number;
   baseline: string | null; updating: boolean; onGo: (step: number) => void;
 }) {
   const rows: [string, string, number][] = [
     ['Apps that stay', `${p.apps} apps${p.allowWebApps ? ' + home-screen web apps' : ''}`, 1],
-    ['Sites that load', p.domains.join(', '), 2],
-    ['DNS filter', p.dns ? 'NextDNS' : 'None', 2],
+    ['DNS filter', p.dns ? (p.dns.startsWith('https://dns.nextdns.io/') ? 'NextDNS' : p.dns) : 'None', 2],
+    ['Web filter', p.webFilter === 'off' ? 'Off' : `${p.webFilter === 'block' ? 'Blocks' : 'Only allows'} ${p.sites.length} sites`, 2],
     ['Lock', `${p.durationDays} days`, 3],
     ['Trial', p.updating ? 'Already running' : `${p.trialDays} days, removable`, 3],
     ['Screen time now', p.baseline ?? 'Not set', 3],
@@ -530,27 +605,108 @@ function AppRow({ app, icon, checked, onToggle, hint }: { app: AllowedApp; icon?
   );
 }
 
+interface PendingAccount { label: string; confirmed: boolean }
+
+// Sealing, in two parts: first lock the accounts that could undo the lock (the
+// DNS provider and its mailbox), then confirm. Passwords never reach this
+// page: the Mac app makes them and puts them on the clipboard.
 function SealDialog({ lock, busy, onCancel, onSeal }: { lock: LockView; busy: boolean; onCancel: () => void; onSeal: () => void }) {
+  const [part, setPart] = useState<'accounts' | 'confirm'>('accounts');
+  const [accounts, setAccounts] = useState<PendingAccount[]>([]);
+  const [label, setLabel] = useState(lock.dnsServerUrl?.includes('nextdns') ? 'NextDNS' : '');
   const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [handedBack, setHandedBack] = useState<{ label: string; password: string }[] | null>(null);
   const unlock = new Date(Date.now() + lock.durationDays * 86_400_000);
+  const base = `/api/accounts/${lock.id}`;
+
+  useEffect(() => { call<PendingAccount[]>('GET', base).then(setAccounts).catch(() => {}); }, [base]);
+
+  async function run(fn: () => Promise<unknown>) {
+    setError(null);
+    try { await fn(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+  }
+
+  const waiting = accounts.find(a => !a.confirmed);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-6">
-      <div className="w-full max-w-md rounded-[28px] bg-background px-7 py-7 shadow-2xl">
-        <h2 className="text-[24px] font-light">Seal for {lock.durationDays} days?</h2>
-        <ul className="mt-4 list-disc space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted-fg">
-          <li>Opens {fmt(unlock.toISOString())}. No exceptions and no early unlock.</li>
-          <li>{lock.apps.length} apps and {lock.domains.length} sites, exactly as in the trial.</li>
-          <li>The removal password is time-locked with drand. You will never see it before then.</li>
-        </ul>
-        <label className="mt-5 block text-[14px]">Type <b>SEAL</b> to confirm
-          <input className={`${input} mt-1 w-full`} value={typed} onChange={e => setTyped(e.target.value)} autoFocus />
-        </label>
-        <div className="mt-5 flex justify-end gap-3">
-          <button className={secondary} onClick={onCancel} disabled={busy}>Not yet</button>
-          <button className={primary} disabled={typed !== 'SEAL' || busy} onClick={onSeal}>
-            {busy ? 'Sealing…' : 'Seal it'}
-          </button>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/30 px-6 py-10">
+      <div className="w-full max-w-lg rounded-[28px] bg-background px-7 py-7 shadow-2xl">
+        {handedBack ? (
+          <>
+            <h2 className="text-[24px] font-light">Not sealed</h2>
+            <p className="mt-2 text-[14px] text-muted-fg">These passwords may already be set on the sites. Save them somewhere before closing.</p>
+            <ul className="mt-4 space-y-2">
+              {handedBack.map(a => <li key={a.label} className="rounded-xl bg-muted px-3 py-2 text-[14px]"><b>{a.label}</b>: <span className="select-all font-mono">{a.password}</span></li>)}
+            </ul>
+            <div className="mt-5 flex justify-end"><button className={secondary} onClick={onCancel}>Close</button></div>
+          </>
+        ) : part === 'accounts' ? (
+          <>
+            <p className="label">Seal · 1 of 2</p>
+            <h2 className="mt-1 text-[24px] font-light">Lock the accounts that could undo this</h2>
+            <p className="mt-2 text-[14px] leading-relaxed text-muted-fg">
+              Anyone who can sign in to your NextDNS account can switch the filter off. For each account, Baseline makes a new password and copies it.
+              Paste it into the site's change-password page and save. You never see it, and it unlocks with the profile.
+              Lock the account's email too, or "forgot password" gets you back in.
+            </p>
+
+            <ul className="mt-4 space-y-2">
+              {accounts.map((a, i) => (
+                <li key={i} className="flex items-center justify-between rounded-xl bg-muted px-3 py-2 text-[14px]">
+                  <span>{a.label}</span>
+                  {a.confirmed ? <span className="text-primary">Locked ✓</span> : (
+                    <span className="flex gap-2">
+                      <button className="text-primary hover:underline" onClick={() => run(() => call('POST', `${base}/${i}/copy`))}>Copy again</button>
+                      <button className="font-medium text-primary hover:underline" onClick={() => run(async () => setAccounts(await call('POST', `${base}/${i}/confirm`)))}>It's changed</button>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {waiting && <p className="mt-2 text-[13px] text-primary">Password for {waiting.label} is on the clipboard. Paste it into the site, save, then press "It's changed".</p>}
+
+            {!waiting && (
+              <div className="mt-4 flex gap-2">
+                <input className={`${input} flex-1`} placeholder='Account, e.g. "NextDNS" or "NextDNS email"' value={label} onChange={e => setLabel(e.target.value)} />
+                <button className={secondary} disabled={!label.trim()}
+                  onClick={() => run(async () => { setAccounts(await call('POST', base, { label })); setLabel(''); })}>
+                  Make &amp; copy password
+                </button>
+              </div>
+            )}
+            {error && <p className="mt-3 text-[13px] text-destructive">{error}</p>}
+
+            <div className="mt-6 flex justify-between gap-3">
+              <button className={secondary} onClick={() => run(async () => {
+                const back = await call<{ label: string; password: string }[]>('POST', `${base}/discard`);
+                if (back.length) setHandedBack(back); else onCancel();
+              })}>Not yet</button>
+              <button className={primary} disabled={Boolean(waiting)} onClick={() => setPart('confirm')}>
+                {accounts.length ? 'Continue' : 'Skip, no accounts'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="label">Seal · 2 of 2</p>
+            <h2 className="mt-1 text-[24px] font-light">Seal for {lock.durationDays} days?</h2>
+            <ul className="mt-4 list-disc space-y-1.5 pl-5 text-[14px] leading-relaxed text-muted-fg">
+              <li>Opens {fmt(unlock.toISOString())}. No exceptions and no early unlock.</li>
+              <li>{lock.apps.length} apps, exactly as in the trial.</li>
+              <li>The removal password{accounts.length ? ` and ${accounts.length} account password${accounts.length > 1 ? 's' : ''}` : ''} are time-locked with drand. You will never see them before then.</li>
+            </ul>
+            <label className="mt-5 block text-[14px]">Type <b>SEAL</b> to confirm
+              <input className={`${input} mt-1 w-full`} value={typed} onChange={e => setTyped(e.target.value)} autoFocus />
+            </label>
+            <div className="mt-5 flex justify-end gap-3">
+              <button className={secondary} onClick={() => setPart('accounts')} disabled={busy}>Back</button>
+              <button className={primary} disabled={typed !== 'SEAL' || busy} onClick={onSeal}>
+                {busy ? 'Sealing…' : 'Seal it'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

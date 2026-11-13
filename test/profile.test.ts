@@ -7,6 +7,7 @@ const base = {
   identifier: 'xyz.amarzbar.baseline.lock',
   bundleIds: ['com.apple.mobilephone', 'com.rbc.mobile'],
   allowWebApps: true,
+  webFilter: 'allow' as const,
   domains: ['amarzbar.xyz', 'baseline.amarzbar.xyz'],
   dnsServerUrl: 'https://dns.nextdns.io/abc123',
 };
@@ -43,6 +44,19 @@ test('the web filter is an allowlist of the chosen sites', () => {
     { URL: 'https://amarzbar.xyz/', Title: 'amarzbar.xyz' },
     { URL: 'https://baseline.amarzbar.xyz/', Title: 'baseline.amarzbar.xyz' },
   ]);
+});
+
+test('with the web filter off there is no filter payload at all', () => {
+  const p = buildProfile({ ...base, webFilter: 'off' });
+  assert.equal(byType(p, 'com.apple.webcontent-filter'), undefined);
+  // An empty allowlist would block every site, so "allow" with no sites must never be built silently.
+  assert.equal(byType(buildProfile({ ...base, webFilter: 'block', domains: [] }), 'com.apple.webcontent-filter'), undefined);
+});
+
+test('block mode denies the bare and www forms of each site', () => {
+  const f = byType(buildProfile({ ...base, webFilter: 'block', domains: ['instagram.com', 'www.reddit.com'] }), 'com.apple.webcontent-filter')!;
+  assert.deepEqual(f.DenyListURLs, ['https://instagram.com', 'https://www.instagram.com', 'https://www.reddit.com']);
+  assert.equal(f.AllowListBookmarks, undefined);
 });
 
 test('DNS lock sits at the top level of its payload', () => {

@@ -4,6 +4,10 @@
 // the dates, never stored, so a stale status can't unlock anything.
 export type LockStatus = 'trial' | 'sealing' | 'sealed' | 'removed' | 'cancelled';
 
+// How the web filter treats `domains`: not at all (DNS does the blocking),
+// block them, or allow only them.
+export type WebFilter = 'off' | 'block' | 'allow';
+
 export interface AllowedApp {
   bundleId: string;
   name: string;
@@ -16,6 +20,7 @@ export interface Lock {
   trialEndsAt: string;
   durationDays: number;
   apps: AllowedApp[];
+  webFilter: WebFilter;
   domains: string[];
   allowWebApps: boolean;
   dnsServerUrl: string | null;
@@ -28,12 +33,16 @@ export interface Lock {
   // tlock (age-armored) ciphertext. Nobody can open it before that round.
   round: number | null;
   ciphertext: string | null;
+  // Other passwords sealed to the same round, like the DNS provider's account
+  // and its mailbox, so they can't be used to undo the lock early.
+  accounts: { label: string; ciphertext: string }[];
   // Last time the Mac saw this lock's profile installed on the phone.
   profileSeenAt: string | null;
 }
 
-// A lock as the API returns it: no ciphertext, plus the derived state.
-export interface LockView extends Omit<Lock, 'ciphertext'> {
+// A lock as the API returns it: no ciphertexts, plus the derived state.
+export interface LockView extends Omit<Lock, 'ciphertext' | 'accounts'> {
+  accounts: string[];
   phase: 'trial' | 'trial-expired' | 'sealing' | 'locked' | 'unlockable' | 'removed' | 'cancelled';
 }
 
