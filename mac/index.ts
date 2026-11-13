@@ -243,7 +243,10 @@ app.post('/api/dns-test', route(async req => {
       const b = Buffer.from(await res.arrayBuffer());
       if (!res.ok || b.length < 12) return { name, result: 'error' };
       const answers = b.readUInt16BE(6);
-      const blocked = (b[3] & 0xf) === 3 || answers === 0 || b.subarray(-4).equals(Buffer.from([0, 0, 0, 0]));
+      // Resolvers block in different ways: NXDOMAIN, no answer, 0.0.0.0, or a
+      // CNAME to a block page with an Extended DNS Error (NextDNS does this).
+      const blocked = (b[3] & 0xf) === 3 || answers === 0 || b.subarray(-4).equals(Buffer.from([0, 0, 0, 0]))
+        || b.includes('blockpage') || b.includes('Blocked') || b.includes('Filtered');
       return { name, result: blocked ? 'blocked' : 'resolves' };
     } catch {
       return { name, result: 'error' };
