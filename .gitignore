@@ -13,3 +13,4 @@ dist/
 
 # Stray app icons from cfgutil, if it ever writes to the working directory again
 /*.png
+release/

@@ -40,6 +40,12 @@ is on. Keep Tailscale in the kept apps.
 
 ## Run the Mac companion
 
+**As an app:** `pnpm app:dist` builds `release/mac-arm64/Baseline.app` (unsigned, for your own Mac);
+drag it to Applications. It reads the same `~/.config/baseline/config.json` as below, so run
+`pnpm mac --server … --token … --save` once first. `pnpm app` runs it straight from the checkout.
+
+**In a browser tab:**
+
 Needs macOS, Apple Configurator, a supervised iPhone, and Node 24.
 
 ```bash

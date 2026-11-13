@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["shared", "server", "mac", "pwa/src", "test", "*.config.ts"]
+  "include": ["shared", "server", "mac", "electron", "pwa/src", "test", "*.config.ts"]
 }

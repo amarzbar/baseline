@@ -10,6 +10,7 @@
   "author": "amarzbar",
   "license": "UNLICENSED",
   "type": "module",
+  "main": "dist/electron/main.mjs",
   "scripts": {
     "dev:pwa": "vite --config vite.pwa.config.ts",
     "dev:mac": "vite --config vite.mac.config.ts",
@@ -17,7 +18,29 @@
     "server": "node server/index.ts",
     "mac": "node mac/index.ts",
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=esm --target=node22 --external:electron --outfile=dist/electron/main.mjs --log-level=warning --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\"",
+    "app": "pnpm build && pnpm build:electron && electron .",
+    "app:dist": "pnpm build && pnpm build:electron && electron-builder --mac dir"
+  },
+  "build": {
+    "appId": "xyz.amarzbar.baseline",
+    "productName": "Baseline",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/electron/**",
+      "dist/mac/**",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": "dir"
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
@@ -27,6 +50,9 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.1",
+    "esbuild": "0.28.2",
     "express": "4.21.2",
     "plist": "3.1.0",
     "react": "^19.3.1",

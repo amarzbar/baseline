@@ -12,10 +12,13 @@ import * as cfg from './cfgutil.ts';
 import { loadConfig } from './config.ts';
 import { serializeProfile } from './profile.ts';
 
-const config = loadConfig();
+// Inside the Electron app (electron/main.ts) there are no command-line flags:
+// settings come from the config file, on a free port, with no browser.
+const inElectron = Boolean(process.versions.electron);
+const config = loadConfig(inElectron ? ['--no-open', '--port', '0'] : undefined);
 cfg.setIdentity(config.cert, config.key);
 const SERVER = config.server;
-const DIST = path.resolve(import.meta.dirname, '../dist/mac');
+const DIST = process.env.BASELINE_UI_DIR ?? path.resolve(import.meta.dirname, '../dist/mac');
 if (!existsSync(path.join(DIST, 'index.html'))) console.warn('No built UI in dist/mac yet: run `pnpm build` first.');
 const DAY = 86_400_000;
 
@@ -273,8 +276,13 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(400).json({ error: err instanceof Error ? err.message : 'Something went wrong' });
 });
 
-app.listen(config.port, '127.0.0.1', () => {
-  const url = `http://127.0.0.1:${config.port}`;
-  console.log(`Baseline for Mac on ${url} (server: ${SERVER})`);
-  if (config.open) execFile('open', [url], () => {});
+// Resolves with the local URL once the server is listening.
+export const ready = new Promise<string>(resolve => {
+  const listener = app.listen(config.port, '127.0.0.1', () => {
+    const { port } = listener.address() as { port: number };
+    const url = `http://127.0.0.1:${port}`;
+    console.log(`Baseline for Mac on ${url} (server: ${SERVER})`);
+    if (config.open) execFile('open', [url], () => {});
+    resolve(url);
+  });
 });
